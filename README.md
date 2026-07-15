@@ -132,8 +132,9 @@ demonstrativos e permite:
 
 O banco multi-condomínio já está criado, com 10 tabelas públicas protegidas por
 RLS, funções controladas para aprovar moradores e confirmar retiradas, limite
-de usuários operacionais e trilha de auditoria. A próxima fatia conecta o
-painel e a área do morador a esses registros persistentes.
+de usuários operacionais e trilha de auditoria. O acesso é concedido por
+vínculos: somente o administrador da plataforma cria condomínios, e os perfis
+administrativos e operacionais são ativados por convite.
 
 Para gerar a versão publicada:
 
@@ -157,6 +158,6 @@ http://localhost:5173/domus-one/
 
 ## Próximo passo
 
-Criar o primeiro operador da plataforma, cadastrar o condomínio inicial e
-conectar o onboarding multi-condomínio ao banco. Em seguida, substituir a lista
-demonstrativa de encomendas por consultas e mutations protegidas pelo RLS.
+Promover o primeiro operador da plataforma e cadastrar o condomínio inicial no
+novo painel central. Em seguida, implementar a solicitação de acesso dos
+moradores e substituir a lista demonstrativa de encomendas por dados reais.

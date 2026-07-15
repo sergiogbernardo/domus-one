@@ -10,11 +10,14 @@ import {
   ChevronDown,
   Clock3,
   LayoutDashboard,
+  Mail,
   LoaderCircle,
   LogOut,
   Menu,
   PackageCheck,
   PackagePlus,
+  Plus,
+  RefreshCw,
   Search,
   Settings,
   ShieldCheck,
@@ -66,7 +69,7 @@ function userInitials(name: string) {
 }
 
 function AuthScreen() {
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [mode, setMode] = useState<'signin' | 'activate'>('signin');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -97,8 +100,8 @@ function AuthScreen() {
       return;
     }
 
-    if (mode === 'signup' && !result.data.session) {
-      setMessage({ tone: 'success', text: 'Conta criada. Confirme o e-mail para entrar no Domus One.' });
+    if (mode === 'activate' && !result.data.session) {
+      setMessage({ tone: 'success', text: 'Conta ativada. Confirme o e-mail para concluir seu acesso.' });
     }
   }
 
@@ -116,11 +119,11 @@ function AuthScreen() {
       <section className="auth-panel">
         <div className="auth-card">
           <Brand />
-          <span className="eyebrow">{mode === 'signin' ? 'BEM-VINDO DE VOLTA' : 'PRIMEIRO ACESSO'}</span>
-          <h2>{mode === 'signin' ? 'Entrar no Domus One' : 'Criar sua conta'}</h2>
-          <p>{mode === 'signin' ? 'Use seu e-mail de acesso à portaria ou área do morador.' : 'Depois do cadastro, seu acesso será vinculado ao condomínio.'}</p>
+          <span className="eyebrow">{mode === 'signin' ? 'BEM-VINDO DE VOLTA' : 'ACESSO POR CONVITE'}</span>
+          <h2>{mode === 'signin' ? 'Entrar no Domus One' : 'Ativar seu acesso'}</h2>
+          <p>{mode === 'signin' ? 'Use seu e-mail de acesso à plataforma, portaria ou área do morador.' : 'Use exatamente o e-mail que recebeu o convite do administrador.'}</p>
           <form onSubmit={submit}>
-            {mode === 'signup' && (
+            {mode === 'activate' && (
               <label>Nome completo<input autoComplete="name" required value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Seu nome" /></label>
             )}
             <label>E-mail<input autoComplete="email" required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@exemplo.com" /></label>
@@ -128,22 +131,154 @@ function AuthScreen() {
             {message && <div className={`auth-message auth-message--${message.tone}`} role="status">{message.text}</div>}
             <button className="button button--primary button--full" disabled={busy} type="submit">
               {busy ? <LoaderCircle className="spin" size={18} /> : <ShieldCheck size={18} />}
-              {busy ? 'Aguarde…' : mode === 'signin' ? 'Entrar com segurança' : 'Criar conta'}
+              {busy ? 'Aguarde…' : mode === 'signin' ? 'Entrar com segurança' : 'Ativar convite'}
             </button>
           </form>
-          <button className="auth-switch" onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setMessage(null); }} type="button">
-            {mode === 'signin' ? 'Ainda não tem acesso? Criar conta' : 'Já possui conta? Entrar'}
+          <button className="auth-switch" onClick={() => { setMode(mode === 'signin' ? 'activate' : 'signin'); setMessage(null); }} type="button">
+            {mode === 'signin' ? 'Recebeu um convite? Ativar acesso' : 'Já ativou seu acesso? Entrar'}
           </button>
+          {mode === 'signin' && <div className="resident-access-note"><UserRound size={16} /><span>Morador? A solicitação de acesso será feita pelo código do seu condomínio.</span></div>}
         </div>
       </section>
     </main>
   );
 }
 
-function Sidebar({ onResidentView, displayName, email, onSignOut }: { onResidentView: () => void; displayName: string; email: string; onSignOut: () => void }) {
+type CondominiumSummary = {
+  id: string;
+  name: string;
+  slug: string;
+  registration_code: string;
+  city: string | null;
+  state: string | null;
+  status: 'active' | 'suspended' | 'archived';
+  staff_limit: number;
+  created_at: string;
+};
+
+type CondominiumForm = {
+  name: string;
+  legalName: string;
+  documentNumber: string;
+  addressLine: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  contactName: string;
+  contactEmail: string;
+  adminEmail: string;
+};
+
+const emptyCondominiumForm: CondominiumForm = {
+  name: '', legalName: '', documentNumber: '', addressLine: '', city: '', state: '',
+  postalCode: '', contactName: '', contactEmail: '', adminEmail: '',
+};
+
+function slugify(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR')
+    .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
+function PlatformDashboard({ displayName, email, onSignOut }: { displayName: string; email: string; onSignOut: () => void }) {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [condominiums, setCondominiums] = useState<CondominiumSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState(emptyCondominiumForm);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadCondominiums() {
+    if (!supabase) return;
+    setLoading(true);
+    const { data, error: loadError } = await supabase.from('condominiums')
+      .select('id,name,slug,registration_code,city,state,status,staff_limit,created_at')
+      .order('created_at', { ascending: false });
+    setLoading(false);
+    if (loadError) setError(loadError.message);
+    else setCondominiums((data || []) as CondominiumSummary[]);
+  }
+
+  useEffect(() => { void loadCondominiums(); }, []);
+
+  function updateForm(field: keyof CondominiumForm, value: string) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function createCondominium(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase) return;
+    setSaving(true);
+    setError(null);
+    const { error: createError } = await supabase.rpc('create_condominium_with_admin_invite', {
+      p_name: form.name.trim(),
+      p_slug: slugify(form.name),
+      p_admin_email: form.adminEmail.trim(),
+      p_legal_name: form.legalName.trim() || null,
+      p_document_number: form.documentNumber.trim() || null,
+      p_address_line: form.addressLine.trim() || null,
+      p_city: form.city.trim() || null,
+      p_state: form.state.trim().toLocaleUpperCase('pt-BR') || null,
+      p_postal_code: form.postalCode.trim() || null,
+      p_contact_name: form.contactName.trim() || null,
+      p_contact_email: form.contactEmail.trim() || null,
+    });
+    setSaving(false);
+    if (createError) {
+      setError(createError.message);
+      return;
+    }
+    setForm(emptyCondominiumForm);
+    setShowForm(false);
+    await loadCondominiums();
+  }
+
+  return (
+    <div className={`platform-shell ${sidebarCollapsed ? 'platform-shell--collapsed' : ''}`}>
+      <aside className="platform-sidebar">
+        <div className="sidebar-brand-row"><Brand /><button className="sidebar-toggle" onClick={() => setSidebarCollapsed((current) => !current)} type="button" aria-label={sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'}><Menu size={18} /></button></div>
+        <div className="platform-badge"><ShieldCheck size={15} />Administração da plataforma</div>
+        <nav><button className="active" type="button"><LayoutDashboard size={18} />Visão geral</button><button type="button"><Building2 size={18} />Condomínios</button><button type="button"><UsersRound size={18} />Administradores</button></nav>
+        <div className="operator-card"><span className="avatar">{userInitials(displayName)}</span><span><strong>{displayName}</strong><small>{email}</small></span><button className="operator-card__logout" onClick={onSignOut} type="button" aria-label="Sair"><LogOut size={16} /></button></div>
+      </aside>
+      <main className="platform-main">
+        <header><div><span className="eyebrow">DOMUS ONE · CONTROLE CENTRAL</span><h1>Administração da plataforma</h1><p>Cadastre condomínios e designe o administrador responsável por cada operação.</p></div><button className="button button--primary button--large" onClick={() => setShowForm(true)} type="button"><Plus size={18} />Novo condomínio</button></header>
+        <section className="platform-metrics">
+          <article><Building2 size={20} /><div><strong>{condominiums.length}</strong><span>Condomínios cadastrados</span></div></article>
+          <article><ShieldCheck size={20} /><div><strong>{condominiums.filter((item) => item.status === 'active').length}</strong><span>Operações ativas</span></div></article>
+          <article><UsersRound size={20} /><div><strong>{condominiums.length * 10}</strong><span>Capacidade operacional</span></div></article>
+        </section>
+        <section className="platform-list">
+          <header><div><h2>Condomínios</h2><p>Ambientes isolados e protegidos por perfil de acesso.</p></div><button className="icon-button" onClick={() => void loadCondominiums()} type="button" aria-label="Atualizar"><RefreshCw size={17} /></button></header>
+          {error && <div className="auth-message auth-message--error">{error}</div>}
+          {loading ? <div className="platform-loading"><LoaderCircle className="spin" size={22} />Carregando condomínios…</div> : (
+            <div className="platform-table">
+              <div className="platform-table__head"><span>CONDOMÍNIO</span><span>LOCALIZAÇÃO</span><span>CÓDIGO</span><span>LIMITE</span><span>STATUS</span></div>
+              {condominiums.map((item) => <article key={item.id}><div><span className="condominium-icon"><Building2 size={18} /></span><span><strong>{item.name}</strong><small>{item.slug}</small></span></div><span>{[item.city, item.state].filter(Boolean).join(' · ') || 'Não informado'}</span><code>{item.registration_code}</code><span>{item.staff_limit} usuários</span><em className={`condominium-status condominium-status--${item.status}`}>{item.status === 'active' ? 'Ativo' : item.status === 'suspended' ? 'Suspenso' : 'Arquivado'}</em></article>)}
+              {condominiums.length === 0 && <div className="platform-empty"><Building2 size={28} /><strong>Nenhum condomínio cadastrado</strong><span>Crie a primeira operação para começar.</span></div>}
+            </div>
+          )}
+        </section>
+      </main>
+      {showForm && <div className="panel-layer resident-modal-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowForm(false)}><section className="platform-form-modal" role="dialog" aria-modal="true" aria-labelledby="condominium-form-title"><header><div><span className="eyebrow">NOVA OPERAÇÃO</span><h2 id="condominium-form-title">Cadastrar condomínio</h2><p>O administrador receberá um convite vinculado somente a este condomínio.</p></div><button className="icon-button" onClick={() => setShowForm(false)} type="button" aria-label="Fechar"><X size={20} /></button></header><form onSubmit={createCondominium}><div className="platform-form-grid"><label className="field-wide">Nome do condomínio<input required value={form.name} onChange={(event) => updateForm('name', event.target.value)} placeholder="Ex.: I9 Horto" /></label><label>Razão social<input value={form.legalName} onChange={(event) => updateForm('legalName', event.target.value)} /></label><label>CNPJ / documento<input value={form.documentNumber} onChange={(event) => updateForm('documentNumber', event.target.value)} /></label><label className="field-wide">Endereço<input value={form.addressLine} onChange={(event) => updateForm('addressLine', event.target.value)} /></label><label>Cidade<input value={form.city} onChange={(event) => updateForm('city', event.target.value)} /></label><label>Estado<input maxLength={2} value={form.state} onChange={(event) => updateForm('state', event.target.value)} placeholder="SP" /></label><label>CEP<input value={form.postalCode} onChange={(event) => updateForm('postalCode', event.target.value)} /></label><label>Contato no condomínio<input value={form.contactName} onChange={(event) => updateForm('contactName', event.target.value)} /></label><label>E-mail de contato<input type="email" value={form.contactEmail} onChange={(event) => updateForm('contactEmail', event.target.value)} /></label><label className="field-wide invite-field"><Mail size={18} /><span>Administrador do condomínio<small>Este e-mail receberá o perfil de administrador principal.</small></span><input required type="email" value={form.adminEmail} onChange={(event) => updateForm('adminEmail', event.target.value)} placeholder="administrador@condominio.com.br" /></label></div>{error && <div className="auth-message auth-message--error">{error}</div>}<footer><button className="button button--ghost" onClick={() => setShowForm(false)} type="button">Cancelar</button><button className="button button--primary" disabled={saving} type="submit">{saving ? <LoaderCircle className="spin" size={18} /> : <Plus size={18} />}{saving ? 'Criando…' : 'Criar condomínio e convite'}</button></footer></form></section></div>}
+    </div>
+  );
+}
+
+function NoAccess({ email, onSignOut }: { email: string; onSignOut: () => void }) {
+  return <main className="system-state"><Brand /><ShieldCheck size={30} /><h1>Acesso aguardando vínculo</h1><p>A conta <strong>{email}</strong> está autenticada, mas ainda não possui permissão em um condomínio. Se recebeu um convite, confirme o e-mail e entre novamente.</p><button className="button button--outline" onClick={onSignOut} type="button"><LogOut size={17} />Sair</button></main>;
+}
+
+type AccessContext =
+  | { kind: 'platform' }
+  | { kind: 'staff'; role: 'admin' | 'doorman'; condominiumId: string }
+  | { kind: 'resident'; condominiumId: string; unitId: string }
+  | { kind: 'none' };
+
+function Sidebar({ collapsed, onToggle, onResidentView, displayName, email, onSignOut }: { collapsed: boolean; onToggle: () => void; onResidentView: () => void; displayName: string; email: string; onSignOut: () => void }) {
   return (
     <aside className="sidebar">
-      <Brand />
+      <div className="sidebar-brand-row"><Brand /><button className="sidebar-toggle" onClick={onToggle} type="button" aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}><Menu size={18} /></button></div>
       <div className="building-context">
         <span className="building-context__icon"><Building2 size={18} /></span>
         <span><small>Condomínio</small><strong>Maison Aurora</strong></span>
@@ -239,6 +374,7 @@ function NewPackagePanel({ onClose, onSave }: { onClose: () => void; onSave: (fo
 }
 
 function DoormanDashboard({ packages, onNewPackage, onResidentView, displayName, email, onSignOut }: { packages: PackageRecord[]; onNewPackage: () => void; onResidentView: () => void; displayName: string; email: string; onSignOut: () => void }) {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'waiting' | 'all'>('waiting');
   const visiblePackages = useMemo(() => packages.filter((item) => {
@@ -248,8 +384,8 @@ function DoormanDashboard({ packages, onNewPackage, onResidentView, displayName,
   }), [filter, packages, query]);
 
   return (
-    <div className="app-shell">
-      <Sidebar onResidentView={onResidentView} displayName={displayName} email={email} onSignOut={onSignOut} />
+    <div className={`app-shell ${sidebarCollapsed ? 'app-shell--collapsed' : ''}`}>
+      <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((current) => !current)} onResidentView={onResidentView} displayName={displayName} email={email} onSignOut={onSignOut} />
       <main className="dashboard" id="painel">
         <header className="topbar">
           <button className="mobile-menu" type="button" aria-label="Abrir menu"><Menu /></button>
@@ -360,6 +496,8 @@ function ResidentApp({ packages, onBack, onCollect }: { packages: PackageRecord[
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [access, setAccess] = useState<AccessContext | null>(null);
+  const [accessLoading, setAccessLoading] = useState(false);
   const [view, setView] = useState<AppView>('doorman');
   const [packages, setPackages] = useState(initialPackages);
   const [showNewPackage, setShowNewPackage] = useState(false);
@@ -383,6 +521,36 @@ export default function App() {
 
     return () => listener.subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!session || !supabase) {
+      setAccess(null);
+      setAccessLoading(false);
+      return;
+    }
+
+    let active = true;
+    async function resolveAccess() {
+      if (!supabase) return;
+      setAccessLoading(true);
+      await supabase.rpc('claim_staff_invites');
+
+      const [platformResult, staffResult, residentResult] = await Promise.all([
+        supabase.from('platform_admins').select('user_id').eq('user_id', session!.user.id).maybeSingle(),
+        supabase.from('staff_memberships').select('role,condominium_id').eq('user_id', session!.user.id).eq('status', 'active').limit(1).maybeSingle(),
+        supabase.from('unit_memberships').select('condominium_id,unit_id').eq('user_id', session!.user.id).eq('status', 'active').limit(1).maybeSingle(),
+      ]);
+
+      if (!active) return;
+      if (platformResult.data) setAccess({ kind: 'platform' });
+      else if (staffResult.data) setAccess({ kind: 'staff', role: staffResult.data.role as 'admin' | 'doorman', condominiumId: staffResult.data.condominium_id });
+      else if (residentResult.data) setAccess({ kind: 'resident', condominiumId: residentResult.data.condominium_id, unitId: residentResult.data.unit_id });
+      else setAccess({ kind: 'none' });
+      setAccessLoading(false);
+    }
+    void resolveAccess();
+    return () => { active = false; };
+  }, [session]);
 
   function notify(message: string) {
     setToast(message);
@@ -413,7 +581,7 @@ export default function App() {
     return <main className="system-state"><Brand /><ShieldCheck size={30} /><h1>Configuração pendente</h1><p>Defina as variáveis públicas do Supabase para liberar o acesso.</p></main>;
   }
 
-  if (authLoading) {
+  if (authLoading || (session && accessLoading)) {
     return <main className="system-state"><Brand /><LoaderCircle className="spin" size={30} /><p>Validando sua sessão…</p></main>;
   }
 
@@ -421,11 +589,16 @@ export default function App() {
 
   const displayName = String(session.user.user_metadata.full_name || session.user.email?.split('@')[0] || 'Usuário');
   const email = session.user.email || '';
+  const signOut = () => supabase?.auth.signOut();
+
+  if (access?.kind === 'platform') return <PlatformDashboard displayName={displayName} email={email} onSignOut={signOut} />;
+  if (access?.kind === 'resident') return <ResidentApp packages={packages} onBack={signOut} onCollect={collectPackage} />;
+  if (!access || access.kind === 'none') return <NoAccess email={email} onSignOut={signOut} />;
 
   return (
     <>
       {view === 'doorman' ? (
-        <DoormanDashboard packages={packages} onNewPackage={() => setShowNewPackage(true)} onResidentView={() => setView('resident')} displayName={displayName} email={email} onSignOut={() => supabase?.auth.signOut()} />
+        <DoormanDashboard packages={packages} onNewPackage={() => setShowNewPackage(true)} onResidentView={() => setView('resident')} displayName={displayName} email={email} onSignOut={signOut} />
       ) : (
         <ResidentApp packages={packages} onBack={() => setView('doorman')} onCollect={collectPackage} />
       )}

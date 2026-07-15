@@ -30,6 +30,20 @@ ambiente.
   operacionais compartilham o limite de 10 vagas por condomínio;
 - alterações críticas e retiradas geram eventos de auditoria.
 
+## Convites e ativação
+
+- não existe cadastro público capaz de escolher um perfil;
+- condomínios são criados exclusivamente por `platform_admins`;
+- a criação do condomínio gera o convite do administrador principal;
+- administradores do condomínio podem convidar somente usuários operacionais;
+- o e-mail confirmado no Supabase Auth reivindica o convite correspondente;
+- uma conta autenticada sem vínculo permanece na tela de acesso pendente;
+- o banco, e não o formulário do navegador, determina o perfil efetivo.
+
+O administrador principal não ocupa uma das 10 vagas operacionais. Convites de
+porteiros já contam no limite para impedir que vários convites pendentes
+ultrapassem a capacidade contratada.
+
 ## Checklist após aplicar
 
 1. confirmar que todas as tabelas públicas mostram RLS habilitada;
