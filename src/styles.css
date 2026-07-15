@@ -128,6 +128,11 @@ h1, h2, h3, p { margin-top: 0; }
 .platform-main > header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 30px; }
 .platform-main > header h1 { margin-bottom: 7px; color: var(--navy-950); font: 600 clamp(27px, 3vw, 38px)/1.15 'Manrope', sans-serif; letter-spacing: -.045em; }
 .platform-main > header p { margin: 0; color: var(--slate); font-size: 12px; }
+.platform-notice { min-height: 46px; display: flex; align-items: center; gap: 10px; margin: -8px 0 18px; padding: 10px 13px; color: #155f50; background: var(--mineral-pale); border: 1px solid #c7e3dc; border-radius: 9px; font-size: 10px; }
+.platform-notice > svg { flex: 0 0 auto; }
+.platform-notice span { flex: 1; }
+.platform-notice button { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; color: #47766d; background: transparent; border: 0; border-radius: 6px; cursor: pointer; }
+.platform-notice button:hover { background: rgb(21 95 80 / 8%); }
 .platform-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 13px; margin-bottom: 25px; }
 .platform-metrics article { min-height: 92px; display: flex; align-items: center; gap: 14px; padding: 18px; background: white; border: 1px solid var(--stone-200); border-radius: 11px; box-shadow: var(--shadow-sm); }
 .platform-metrics article > svg { width: 38px; height: 38px; padding: 9px; color: var(--mineral); background: var(--mineral-pale); border-radius: 9px; }

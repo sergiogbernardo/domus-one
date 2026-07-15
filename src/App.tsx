@@ -126,6 +126,13 @@ const emptyCondominiumForm: CondominiumForm = {
 
 type AdminForm = { condominiumId: string; email: string };
 
+type InvitationResponse = {
+  ok: boolean;
+  delivery?: 'sent' | 'existing_user';
+  assignmentCreated?: boolean;
+  error?: string;
+};
+
 type ConfirmAction =
   | { kind: 'archive-condominium'; id: string; label: string }
   | { kind: 'deactivate-administrator'; id: string; label: string };
@@ -150,6 +157,7 @@ function PlatformDashboard({ displayName, email, onSignOut }: { displayName: str
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyCondominiumForm);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   async function loadCondominiums() {
     if (!supabase) return;
@@ -189,7 +197,8 @@ function PlatformDashboard({ displayName, email, onSignOut }: { displayName: str
     }
     setSaving(true);
     setError(null);
-    const { error: createError } = await supabase.rpc('create_condominium_with_admin_invite', {
+    setNotice(null);
+    const { data: createdCondominium, error: createError } = await supabase.rpc('create_condominium_with_admin_invite', {
       p_name: form.name.trim(),
       p_slug: slugify(form.name),
       p_admin_email: form.adminEmail.trim(),
@@ -202,12 +211,19 @@ function PlatformDashboard({ displayName, email, onSignOut }: { displayName: str
       p_contact_name: form.contactName.trim() || null,
       p_contact_email: form.contactEmail.trim() || null,
     });
-    setSaving(false);
     if (createError) {
+      setSaving(false);
       setError(createError.message.includes('platform_admin_cannot_join_condominium')
         ? 'Este e-mail pertence à administração da plataforma e não pode ser vinculado a um condomínio.'
         : createError.message);
       return;
+    }
+    const invitation = await sendAdministratorInvitation(createdCondominium.id, form.adminEmail);
+    setSaving(false);
+    if (!invitation.ok) {
+      setNotice('Condomínio criado, mas o e-mail não foi entregue. Use “Reenviar convite” na página de administradores.');
+    } else {
+      setNotice(invitation.delivery === 'sent' ? `Convite enviado para ${form.adminEmail.trim()}.` : 'O administrador já possui uma conta e foi vinculado imediatamente.');
     }
     setForm(emptyCondominiumForm);
     setShowForm(false);
@@ -219,6 +235,15 @@ function PlatformDashboard({ displayName, email, onSignOut }: { displayName: str
     if (message.includes('invalid_admin_email')) return 'Informe um e-mail válido para o administrador.';
     if (message.includes('staff_limit_reached')) return 'O novo limite é menor que a quantidade atual de usuários ativos.';
     return message;
+  }
+
+  async function sendAdministratorInvitation(condominiumId: string, invitationEmail: string) {
+    if (!supabase) return { ok: false, error: 'Supabase não configurado.' } as InvitationResponse;
+    const { data, error: invokeError } = await supabase.functions.invoke<InvitationResponse>('invite-condominium-admin', {
+      body: { condominiumId, email: invitationEmail.trim() },
+    });
+    if (invokeError) return { ok: false, error: invokeError.message } as InvitationResponse;
+    return data ?? { ok: false, error: 'A função de convite não retornou uma resposta.' };
   }
 
   function openNewCondominium() {
@@ -306,16 +331,15 @@ function PlatformDashboard({ displayName, email, onSignOut }: { displayName: str
     }
     setSaving(true);
     setError(null);
-    const { error: assignError } = await supabase.rpc('assign_condominium_admin', {
-      p_condominium_id: adminForm.condominiumId,
-      p_email: adminForm.email.trim(),
-    });
+    setNotice(null);
+    const invitation = await sendAdministratorInvitation(adminForm.condominiumId, adminForm.email);
     setSaving(false);
-    if (assignError) {
-      setError(friendlyManagementError(assignError.message));
+    if (!invitation.ok) {
+      setError(friendlyManagementError(invitation.error || 'Não foi possível enviar o convite.'));
       return;
     }
     setShowAdminForm(false);
+    setNotice(invitation.delivery === 'sent' ? `Convite enviado para ${adminForm.email.trim()}.` : 'O administrador já possui uma conta e foi vinculado imediatamente.');
     await loadAdministrators();
   }
 
@@ -323,13 +347,28 @@ function PlatformDashboard({ displayName, email, onSignOut }: { displayName: str
     if (!supabase || !item.invited_email) return;
     setSaving(true);
     setError(null);
-    const { error: reactivateError } = await supabase.rpc('assign_condominium_admin', {
-      p_condominium_id: item.condominium_id,
-      p_email: item.invited_email,
-    });
+    setNotice(null);
+    const invitation = await sendAdministratorInvitation(item.condominium_id, item.invited_email);
     setSaving(false);
-    if (reactivateError) setError(friendlyManagementError(reactivateError.message));
-    else await loadAdministrators();
+    if (!invitation.ok) setError(friendlyManagementError(invitation.error || 'Não foi possível reativar o administrador.'));
+    else {
+      setNotice(invitation.delivery === 'sent' ? `Novo convite enviado para ${item.invited_email}.` : 'Administrador reativado.');
+      await loadAdministrators();
+    }
+  }
+
+  async function resendAdministratorInvitation(item: CondominiumAdministrator) {
+    if (!item.invited_email) return;
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    const invitation = await sendAdministratorInvitation(item.condominium_id, item.invited_email);
+    setSaving(false);
+    if (!invitation.ok) setError(friendlyManagementError(invitation.error || 'Não foi possível reenviar o convite.'));
+    else {
+      setNotice(invitation.delivery === 'sent' ? `Convite reenviado para ${item.invited_email}.` : 'O administrador já possui uma conta e foi ativado.');
+      await loadAdministrators();
+    }
   }
 
   async function executeConfirmedAction() {
@@ -365,6 +404,7 @@ function PlatformDashboard({ displayName, email, onSignOut }: { displayName: str
       </aside>
       <main className="platform-main">
         <header><div><span className="eyebrow">{viewCopy.eyebrow}</span><h1>{viewCopy.title}</h1><p>{viewCopy.description}</p></div>{platformView !== 'administrators' ? <button className="button button--primary button--large" onClick={openNewCondominium} type="button"><Plus size={18} />Novo condomínio</button> : <button className="button button--primary button--large" onClick={() => openAdministratorEditor()} type="button"><UserPlus size={18} />Vincular administrador</button>}</header>
+        {notice && <div className="platform-notice"><Check size={17} /><span>{notice}</span><button onClick={() => setNotice(null)} type="button" aria-label="Fechar mensagem"><X size={15} /></button></div>}
         {platformView === 'overview' && <section className="platform-metrics">
           <article><Building2 size={20} /><div><strong>{condominiums.length}</strong><span>Condomínios cadastrados</span></div></article>
           <article><ShieldCheck size={20} /><div><strong>{condominiums.filter((item) => item.status === 'active').length}</strong><span>Operações ativas</span></div></article>
@@ -385,7 +425,7 @@ function PlatformDashboard({ displayName, email, onSignOut }: { displayName: str
           {error && <div className="auth-message auth-message--error">{error}</div>}
           {administratorsLoading ? <div className="platform-loading"><LoaderCircle className="spin" size={22} />Carregando administradores…</div> : <div className="platform-admin-table">
             <div className="platform-admin-table__head"><span>ADMINISTRADOR</span><span>CONDOMÍNIO</span><span>PERFIL</span><span>STATUS</span><span>AÇÕES</span></div>
-            {administrators.map((item) => <article key={item.id}><div><span className="administrator-avatar">{userInitials(item.invited_email || 'Administrador')}</span><span><strong>{item.invited_email || 'E-mail não informado'}</strong><small>{item.user_id ? 'Conta vinculada' : 'Aguardando ativação'}</small></span></div><span><strong>{item.condominiums?.name || 'Condomínio indisponível'}</strong><small>{item.condominiums?.registration_code || '—'}</small></span><span>{item.is_owner ? 'Principal' : 'Administrador'}</span><em className={`membership-status membership-status--${item.status}`}>{item.status === 'active' ? 'Ativo' : item.status === 'invited' ? 'Convidado' : 'Inativo'}</em><span className="platform-row-actions"><button onClick={() => openAdministratorEditor(item)} type="button" aria-label={`Editar ${item.invited_email || 'administrador'}`} title="Substituir administrador"><Pencil size={15} /></button>{item.status === 'inactive' ? <button onClick={() => void reactivateAdministrator(item)} type="button" aria-label={`Reativar ${item.invited_email || 'administrador'}`} title="Reativar administrador"><RotateCcw size={15} /></button> : <button className="danger" onClick={() => setConfirmAction({ kind: 'deactivate-administrator', id: item.id, label: item.invited_email || 'este administrador' })} type="button" aria-label={`Desativar ${item.invited_email || 'administrador'}`} title="Desativar administrador"><Trash2 size={15} /></button>}</span></article>)}
+            {administrators.map((item) => <article key={item.id}><div><span className="administrator-avatar">{userInitials(item.invited_email || 'Administrador')}</span><span><strong>{item.invited_email || 'E-mail não informado'}</strong><small>{item.user_id ? 'Conta vinculada' : 'Aguardando ativação'}</small></span></div><span><strong>{item.condominiums?.name || 'Condomínio indisponível'}</strong><small>{item.condominiums?.registration_code || '—'}</small></span><span>{item.is_owner ? 'Principal' : 'Administrador'}</span><em className={`membership-status membership-status--${item.status}`}>{item.status === 'active' ? 'Ativo' : item.status === 'invited' ? 'Convidado' : 'Inativo'}</em><span className="platform-row-actions"><button onClick={() => openAdministratorEditor(item)} type="button" aria-label={`Editar ${item.invited_email || 'administrador'}`} title="Substituir administrador"><Pencil size={15} /></button>{item.status === 'invited' && <button onClick={() => void resendAdministratorInvitation(item)} type="button" aria-label={`Reenviar convite para ${item.invited_email || 'administrador'}`} title="Reenviar convite"><Mail size={15} /></button>}{item.status === 'inactive' ? <button onClick={() => void reactivateAdministrator(item)} type="button" aria-label={`Reativar ${item.invited_email || 'administrador'}`} title="Reativar administrador"><RotateCcw size={15} /></button> : <button className="danger" onClick={() => setConfirmAction({ kind: 'deactivate-administrator', id: item.id, label: item.invited_email || 'este administrador' })} type="button" aria-label={`Desativar ${item.invited_email || 'administrador'}`} title="Desativar administrador"><Trash2 size={15} /></button>}</span></article>)}
             {administrators.length === 0 && <div className="platform-empty"><UsersRound size={28} /><strong>Nenhum administrador cadastrado</strong><span>Um administrador será criado junto com o próximo condomínio.</span></div>}
           </div>}
         </section>}
