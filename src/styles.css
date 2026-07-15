@@ -213,8 +213,12 @@ h1, h2, h3, p { margin-top: 0; }
 .eyebrow { display: block; margin-bottom: 8px; color: var(--mineral); font-size: 9px; font-weight: 700; letter-spacing: .14em; }
 .page-heading h1 { margin-bottom: 6px; color: var(--navy-950); font: 600 clamp(26px, 3vw, 34px)/1.2 'Manrope', sans-serif; letter-spacing: -.035em; }
 .page-heading p { margin-bottom: 0; color: var(--slate); font-size: 13px; }
+.operational-notice { display: flex; align-items: center; gap: 10px; margin: -7px 0 18px; padding: 12px 14px; color: #76551d; background: var(--amber-pale); border: 1px solid #eed8ad; border-radius: 9px; font-size: 10px; line-height: 1.5; }
+.operational-notice svg { flex: 0 0 auto; color: var(--amber); }
+.operational-notice strong { margin-right: 4px; }
 .button { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 16px; border: 1px solid transparent; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; transition: transform .15s, background .15s, border-color .15s; }
 .button:active { transform: translateY(1px); }
+.button:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
 .button--primary { color: #fff; background: var(--mineral); box-shadow: 0 5px 16px rgb(24 122 104 / 16%); }
 .button--primary:hover { background: #126c5c; }
 .button--danger { color: white; background: #a43e3e; box-shadow: 0 5px 16px rgb(164 62 62 / 15%); }
@@ -279,7 +283,7 @@ h1, h2, h3, p { margin-top: 0; }
 .new-package-panel input:focus, .new-package-panel select:focus, .new-package-panel textarea:focus { border-color: #6bafa1; box-shadow: 0 0 0 3px rgb(24 122 104 / 9%); }
 .field-prefix { position: relative; }
 .field-prefix svg { position: absolute; left: 12px; top: 50%; color: #8a969d; transform: translateY(-50%); }
-.field-prefix input { padding-left: 39px; }
+.field-prefix input, .field-prefix select { padding-left: 39px; }
 .form-security { display: flex; gap: 8px; align-items: flex-start; padding: 3px 1px; color: #7b878e; font-size: 10px; line-height: 1.5; }
 .form-security svg { flex: 0 0 auto; color: var(--mineral); }
 .new-package-panel form footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; padding-top: 20px; border-top: 1px solid var(--stone-200); }

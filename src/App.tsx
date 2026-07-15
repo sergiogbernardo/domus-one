@@ -29,24 +29,80 @@ import {
   UsersRound,
   X,
 } from 'lucide-react';
-import { initialPackages } from './data';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
 import PublicSite from './PublicSite';
 import type { AppView, PackageRecord } from './types';
 
 type NewPackageForm = {
-  apartment: string;
+  unitId: string;
   resident: string;
   carrier: string;
   note: string;
 };
 
 const emptyForm: NewPackageForm = {
-  apartment: '',
+  unitId: '',
   resident: '',
   carrier: '',
   note: '',
 };
+
+type OperationalCondominium = {
+  id: string;
+  name: string;
+  registrationCode: string;
+};
+
+type OperationalUnit = {
+  id: string;
+  unitNumber: string;
+  buildingId: string;
+  buildingName: string;
+};
+
+type PackageRow = {
+  id: string;
+  unit_id: string;
+  recipient_name: string;
+  carrier: string;
+  description: string | null;
+  status: 'waiting' | 'collected' | 'cancelled';
+  received_at: string;
+  collected_at: string | null;
+};
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  const sameDay = (left: Date, right: Date) => left.getFullYear() === right.getFullYear()
+    && left.getMonth() === right.getMonth() && left.getDate() === right.getDate();
+  const time = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' }).format(date);
+  if (sameDay(date, today)) return `Hoje, ${time}`;
+  if (sameDay(date, yesterday)) return `Ontem, ${time}`;
+  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(date).replace('.', '');
+}
+
+function startOfTodayIso() {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  return date.toISOString();
+}
+
+function formatAverageWait(packages: PackageRecord[]) {
+  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const durations = packages
+    .filter((item) => item.collectedAtIso && new Date(item.collectedAtIso).getTime() >= thirtyDaysAgo)
+    .map((item) => new Date(item.collectedAtIso!).getTime() - new Date(item.receivedAt).getTime())
+    .filter((duration) => duration >= 0);
+  if (durations.length === 0) return '—';
+  const averageHours = durations.reduce((total, duration) => total + duration, 0) / durations.length / 3_600_000;
+  if (averageHours < 24) return `${Math.max(1, Math.round(averageHours))}h`;
+  const days = Math.floor(averageHours / 24);
+  const hours = Math.round(averageHours % 24);
+  return hours ? `${days}d ${hours}h` : `${days}d`;
+}
 
 function Brand({ compact = false }: { compact?: boolean }) {
   return (
@@ -460,19 +516,18 @@ type AccessContext =
   | { kind: 'resident'; condominiumId: string; unitId: string }
   | { kind: 'none' };
 
-function Sidebar({ collapsed, onToggle, onResidentView, displayName, email, onSignOut }: { collapsed: boolean; onToggle: () => void; onResidentView: () => void; displayName: string; email: string; onSignOut: () => void }) {
+function Sidebar({ collapsed, onToggle, onResidentView, condominiumName, waitingCount, displayName, email, onSignOut }: { collapsed: boolean; onToggle: () => void; onResidentView: () => void; condominiumName: string; waitingCount: number; displayName: string; email: string; onSignOut: () => void }) {
   return (
     <aside className="sidebar">
       <div className="sidebar-brand-row"><Brand /><button className="sidebar-toggle" onClick={onToggle} type="button" aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}><Menu size={18} /></button></div>
       <div className="building-context">
         <span className="building-context__icon"><Building2 size={18} /></span>
-        <span><small>Condomínio</small><strong>Maison Aurora</strong></span>
-        <ChevronDown size={16} />
+        <span><small>Condomínio</small><strong>{condominiumName}</strong></span>
       </div>
       <nav aria-label="Navegação principal">
         <p>OPERAÇÃO</p>
         <a className="nav-link nav-link--active" href="#painel"><LayoutDashboard size={19} />Painel</a>
-        <a className="nav-link" href="#encomendas"><Boxes size={19} />Encomendas<span>18</span></a>
+        <a className="nav-link" href="#encomendas"><Boxes size={19} />Encomendas{waitingCount > 0 && <span>{waitingCount}</span>}</a>
         <a className="nav-link" href="#historico"><Archive size={19} />Histórico</a>
         <p>GESTÃO</p>
         <a className="nav-link" href="#unidades"><Building2 size={19} />Unidades</a>
@@ -510,7 +565,7 @@ function Status({ status }: { status: PackageRecord['status'] }) {
   );
 }
 
-function NewPackagePanel({ onClose, onSave }: { onClose: () => void; onSave: (form: NewPackageForm) => void }) {
+function NewPackagePanel({ units, saving, onClose, onSave }: { units: OperationalUnit[]; saving: boolean; onClose: () => void; onSave: (form: NewPackageForm) => void }) {
   const [form, setForm] = useState(emptyForm);
 
   function update(field: keyof NewPackageForm, value: string) {
@@ -532,8 +587,8 @@ function NewPackagePanel({ onClose, onSave }: { onClose: () => void; onSave: (fo
         <form onSubmit={submit}>
           <div className="form-intro"><PackagePlus size={23} /><p>Informe primeiro a unidade. O morador verá a encomenda assim que o registro for concluído.</p></div>
           <label>
-            Apartamento
-            <div className="field-prefix"><Building2 size={18} /><input autoFocus required inputMode="numeric" placeholder="Ex.: 1204" value={form.apartment} onChange={(e) => update('apartment', e.target.value)} /></div>
+            Unidade
+            <div className="field-prefix"><Building2 size={18} /><select autoFocus required value={form.unitId} onChange={(e) => update('unitId', e.target.value)}><option value="">Selecionar unidade</option>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.buildingName} · {unit.unitNumber}</option>)}</select></div>
           </label>
           <label>
             Destinatário
@@ -551,14 +606,14 @@ function NewPackagePanel({ onClose, onSave }: { onClose: () => void; onSave: (fo
             <textarea rows={3} placeholder="Ex.: caixa grande, item frágil…" value={form.note} onChange={(e) => update('note', e.target.value)} />
           </label>
           <div className="form-security"><ShieldCheck size={18} /><span>O registro ficará associado ao seu usuário, com data e horário.</span></div>
-          <footer><button className="button button--ghost" onClick={onClose} type="button">Cancelar</button><button className="button button--primary" type="submit"><PackagePlus size={18} />Registrar encomenda</button></footer>
+          <footer><button className="button button--ghost" disabled={saving} onClick={onClose} type="button">Cancelar</button><button className="button button--primary" disabled={saving} type="submit">{saving ? <LoaderCircle className="spin" size={18} /> : <PackagePlus size={18} />}{saving ? 'Registrando…' : 'Registrar encomenda'}</button></footer>
         </form>
       </section>
     </div>
   );
 }
 
-function DoormanDashboard({ packages, onNewPackage, onResidentView, displayName, email, onSignOut }: { packages: PackageRecord[]; onNewPackage: () => void; onResidentView: () => void; displayName: string; email: string; onSignOut: () => void }) {
+function DoormanDashboard({ condominium, units, packages, onNewPackage, onResidentView, displayName, email, onSignOut }: { condominium: OperationalCondominium; units: OperationalUnit[]; packages: PackageRecord[]; onNewPackage: () => void; onResidentView: () => void; displayName: string; email: string; onSignOut: () => void }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'waiting' | 'all'>('waiting');
@@ -567,27 +622,33 @@ function DoormanDashboard({ packages, onNewPackage, onResidentView, displayName,
     const normalized = query.trim().toLocaleLowerCase('pt-BR');
     return matchesFilter && (!normalized || [item.apartment, item.resident, item.carrier, item.id].some((value) => value.toLocaleLowerCase('pt-BR').includes(normalized)));
   }), [filter, packages, query]);
+  const todayStart = startOfTodayIso();
+  const waitingCount = packages.filter((item) => item.status === 'waiting').length;
+  const receivedToday = packages.filter((item) => item.receivedAt >= todayStart).length;
+  const collectedToday = packages.filter((item) => item.status === 'collected' && item.collectedAtIso && item.collectedAtIso >= todayStart).length;
+  const currentDate = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' }).format(new Date());
 
   return (
     <div className={`app-shell ${sidebarCollapsed ? 'app-shell--collapsed' : ''}`}>
-      <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((current) => !current)} onResidentView={onResidentView} displayName={displayName} email={email} onSignOut={onSignOut} />
+      <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((current) => !current)} onResidentView={onResidentView} condominiumName={condominium.name} waitingCount={waitingCount} displayName={displayName} email={email} onSignOut={onSignOut} />
       <main className="dashboard" id="painel">
         <header className="topbar">
           <button className="mobile-menu" type="button" aria-label="Abrir menu"><Menu /></button>
           <Brand compact />
-          <span className="topbar__date">Terça-feira, 14 de julho</span>
+          <span className="topbar__date">{currentDate}</span>
           <div className="topbar__actions"><button className="icon-button notification" aria-label="Notificações"><Bell size={20} /><i /></button><button className="mobile-avatar" type="button">LA</button></div>
         </header>
         <div className="dashboard__content">
           <section className="page-heading">
             <div><span className="eyebrow">PORTARIA · OPERAÇÃO ATIVA</span><h1>Olá, {displayName.split(' ')[0]}.</h1><p>Acompanhe o que chegou e mantenha a portaria em ordem.</p></div>
-            <button className="button button--primary button--large" onClick={onNewPackage} type="button"><PackagePlus size={19} />Nova encomenda</button>
+            <button className="button button--primary button--large" disabled={units.length === 0} onClick={onNewPackage} title={units.length === 0 ? 'Cadastre uma unidade antes de receber encomendas' : undefined} type="button"><PackagePlus size={19} />Nova encomenda</button>
           </section>
+          {units.length === 0 && <div className="operational-notice"><Building2 size={18} /><span><strong>Estrutura inicial pendente</strong> Cadastre os blocos e as unidades do {condominium.name} para começar a receber encomendas.</span></div>}
           <section className="metrics" aria-label="Resumo da portaria">
-            <MetricCard icon={<Boxes size={21} />} label="Aguardando retirada" value={String(packages.filter((item) => item.status === 'waiting').length + 13)} detail="3 desde ontem" tone="amber" />
-            <MetricCard icon={<PackageCheck size={21} />} label="Recebidas hoje" value="06" detail="Dentro da média" tone="mineral" />
-            <MetricCard icon={<Check size={21} />} label="Retiradas hoje" value="11" detail="+22% que ontem" />
-            <MetricCard icon={<Clock3 size={21} />} label="Tempo médio de espera" value="1d 4h" detail="Últimos 30 dias" />
+            <MetricCard icon={<Boxes size={21} />} label="Aguardando retirada" value={String(waitingCount).padStart(2, '0')} detail="Dados em tempo real" tone="amber" />
+            <MetricCard icon={<PackageCheck size={21} />} label="Recebidas hoje" value={String(receivedToday).padStart(2, '0')} detail="Desde 00:00" tone="mineral" />
+            <MetricCard icon={<Check size={21} />} label="Retiradas hoje" value={String(collectedToday).padStart(2, '0')} detail="Confirmadas hoje" />
+            <MetricCard icon={<Clock3 size={21} />} label="Tempo médio de espera" value={formatAverageWait(packages)} detail="Últimos 30 dias" />
           </section>
           <section className="package-section" id="encomendas">
             <header>
@@ -602,15 +663,15 @@ function DoormanDashboard({ packages, onNewPackage, onResidentView, displayName,
               <div className="package-table__head" role="row"><span>UNIDADE</span><span>DESTINATÁRIO</span><span>TRANSPORTADORA</span><span>CHEGADA</span><span>STATUS</span><span /></div>
               {visiblePackages.map((item) => (
                 <div className="package-row" role="row" key={item.id}>
-                  <div className="unit-cell"><span>{item.apartment}</span><small>Bloco Aurora</small></div>
+                  <div className="unit-cell"><span>{item.apartment}</span><small>{item.building}</small></div>
                   <div><strong>{item.resident}</strong><small>{item.id}</small></div>
                   <div><span>{item.carrier}</span><small>{item.note ?? 'Volume padrão'}</small></div>
-                  <div><span>{item.arrivedAt}</span><small>por Lucas Almeida</small></div>
+                  <div><span>{item.arrivedAt}</span><small>Registrada na portaria</small></div>
                   <div><Status status={item.status} /></div>
                   <button className="row-action" type="button" aria-label={`Abrir encomenda ${item.id}`}><ChevronDown size={17} /></button>
                 </div>
               ))}
-              {visiblePackages.length === 0 && <div className="empty-state"><Search size={24} /><strong>Nenhuma encomenda encontrada</strong><span>Tente buscar por outro apartamento ou nome.</span></div>}
+              {visiblePackages.length === 0 && <div className="empty-state">{packages.length === 0 ? <Boxes size={24} /> : <Search size={24} />}<strong>{packages.length === 0 ? 'Nenhuma encomenda registrada' : 'Nenhuma encomenda encontrada'}</strong><span>{packages.length === 0 ? `Os registros do ${condominium.name} aparecerão aqui.` : 'Tente buscar por outra unidade ou nome.'}</span></div>}
             </div>
             <footer className="table-footer"><span>Mostrando {visiblePackages.length} registros</span><button type="button">Ver todas as encomendas <span>→</span></button></footer>
           </section>
@@ -620,9 +681,9 @@ function DoormanDashboard({ packages, onNewPackage, onResidentView, displayName,
   );
 }
 
-function ResidentApp({ packages, onBack, onCollect }: { packages: PackageRecord[]; onBack: () => void; onCollect: (id: string) => void }) {
+function ResidentApp({ packages, unit, displayName, preview = false, onBack, onCollect }: { packages: PackageRecord[]; unit: OperationalUnit | null; displayName: string; preview?: boolean; onBack: () => void; onCollect: (id: string) => void }) {
   const [tab, setTab] = useState<'home' | 'history'>('home');
-  const residentPackages = packages.filter((item) => item.apartment === '1204');
+  const residentPackages = unit ? packages.filter((item) => item.unitId === unit.id) : [];
   const waiting = residentPackages.filter((item) => item.status === 'waiting');
   const [selected, setSelected] = useState<string | null>(null);
   const selectedPackage = residentPackages.find((item) => item.id === selected);
@@ -633,12 +694,12 @@ function ResidentApp({ packages, onBack, onCollect }: { packages: PackageRecord[
       <div className="phone-surface">
         <header className="resident-header"><Brand /><button className="icon-button notification" aria-label="Notificações"><Bell size={20} /><i /></button></header>
         <section className="resident-content">
-          <div className="resident-welcome"><div><span>OLÁ, MARINA</span><h1>Suas encomendas</h1></div><span className="avatar avatar--large">MA</span></div>
+          <div className="resident-welcome"><div><span>OLÁ, {preview ? 'MORADOR' : displayName.toLocaleUpperCase('pt-BR')}</span><h1>Suas encomendas</h1></div><span className="avatar avatar--large">{userInitials(preview ? 'Morador' : displayName)}</span></div>
           {tab === 'home' && (
             <>
               <div className="arrival-card">
                 <span className="arrival-card__icon"><PackageCheck size={25} /></span>
-                <div><span>{waiting.length > 0 ? `${waiting.length} encomendas aguardando` : 'Tudo retirado'}</span><strong>{waiting.length > 0 ? 'Tem novidade na portaria.' : 'Nenhuma pendência por aqui.'}</strong><small>Apartamento 1204 · Bloco Aurora</small></div>
+                <div><span>{waiting.length > 0 ? `${waiting.length} encomendas aguardando` : 'Tudo retirado'}</span><strong>{waiting.length > 0 ? 'Tem novidade na portaria.' : 'Nenhuma pendência por aqui.'}</strong><small>{unit ? `Unidade ${unit.unitNumber} · ${unit.buildingName}` : 'Pré-visualização sem unidade selecionada'}</small></div>
               </div>
               <div className="section-title"><div><h2>Aguardando retirada</h2><span>{waiting.length}</span></div><small>Atualizado agora</small></div>
               <div className="resident-package-list">
@@ -684,7 +745,12 @@ export default function App() {
   const [access, setAccess] = useState<AccessContext | null>(null);
   const [accessLoading, setAccessLoading] = useState(false);
   const [view, setView] = useState<AppView>('doorman');
-  const [packages, setPackages] = useState(initialPackages);
+  const [condominium, setCondominium] = useState<OperationalCondominium | null>(null);
+  const [units, setUnits] = useState<OperationalUnit[]>([]);
+  const [packages, setPackages] = useState<PackageRecord[]>([]);
+  const [operationalLoading, setOperationalLoading] = useState(false);
+  const [operationalError, setOperationalError] = useState<string | null>(null);
+  const [packageSaving, setPackageSaving] = useState(false);
   const [showNewPackage, setShowNewPackage] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -737,28 +803,140 @@ export default function App() {
     return () => { active = false; };
   }, [session]);
 
+  useEffect(() => {
+    if (!supabase || !access || (access.kind !== 'staff' && access.kind !== 'resident')) {
+      setCondominium(null);
+      setUnits([]);
+      setPackages([]);
+      setOperationalError(null);
+      setOperationalLoading(false);
+      return;
+    }
+
+    let active = true;
+    async function loadOperationalData() {
+      if (!supabase || !access || (access.kind !== 'staff' && access.kind !== 'resident')) return;
+      setOperationalLoading(true);
+      setOperationalError(null);
+      const condominiumId = access.condominiumId;
+      const packageQuery = supabase.from('packages')
+        .select('id,unit_id,recipient_name,carrier,description,status,received_at,collected_at')
+        .eq('condominium_id', condominiumId)
+        .in('status', ['waiting', 'collected'])
+        .order('received_at', { ascending: false })
+        .limit(200);
+      if (access.kind === 'resident') packageQuery.eq('unit_id', access.unitId);
+
+      const [condominiumResult, buildingsResult, unitsResult, packagesResult] = await Promise.all([
+        supabase.from('condominiums').select('id,name,registration_code').eq('id', condominiumId).single(),
+        supabase.from('buildings').select('id,name').eq('condominium_id', condominiumId).order('sort_order'),
+        supabase.from('units').select('id,unit_number,building_id').eq('condominium_id', condominiumId).eq('status', 'active').order('unit_number'),
+        packageQuery,
+      ]);
+      if (!active) return;
+      const loadError = condominiumResult.error || buildingsResult.error || unitsResult.error || packagesResult.error;
+      if (loadError) {
+        setOperationalError(loadError.message);
+        setOperationalLoading(false);
+        return;
+      }
+
+      const buildingNames = new Map((buildingsResult.data || []).map((building) => [building.id, building.name]));
+      const nextUnits: OperationalUnit[] = (unitsResult.data || []).map((unit) => ({
+        id: unit.id,
+        unitNumber: unit.unit_number,
+        buildingId: unit.building_id,
+        buildingName: buildingNames.get(unit.building_id) || 'Bloco não informado',
+      }));
+      const unitsById = new Map(nextUnits.map((unit) => [unit.id, unit]));
+      const nextPackages: PackageRecord[] = ((packagesResult.data || []) as PackageRow[]).flatMap((item) => {
+        const unit = unitsById.get(item.unit_id);
+        if (!unit || item.status === 'cancelled') return [];
+        return [{
+          id: `DO-${item.id.slice(0, 8).toLocaleUpperCase('pt-BR')}`,
+          databaseId: item.id,
+          unitId: item.unit_id,
+          apartment: unit.unitNumber,
+          building: unit.buildingName,
+          resident: item.recipient_name,
+          carrier: item.carrier,
+          arrivedAt: formatDateTime(item.received_at),
+          receivedAt: item.received_at,
+          note: item.description || undefined,
+          status: item.status,
+          collectedAt: item.collected_at ? formatDateTime(item.collected_at) : undefined,
+          collectedAtIso: item.collected_at || undefined,
+        }];
+      });
+      setCondominium({
+        id: condominiumResult.data.id,
+        name: condominiumResult.data.name,
+        registrationCode: condominiumResult.data.registration_code,
+      });
+      setUnits(nextUnits);
+      setPackages(nextPackages);
+      setOperationalLoading(false);
+    }
+    void loadOperationalData();
+    return () => { active = false; };
+  }, [access]);
+
   function notify(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(null), 3200);
   }
 
-  function addPackage(form: NewPackageForm) {
-    const next: PackageRecord = {
-      id: `DO-${2841 + packages.length}`,
-      apartment: form.apartment.trim(),
-      resident: form.resident.trim(),
+  async function addPackage(form: NewPackageForm) {
+    if (!supabase || !session || !condominium) return;
+    const unit = units.find((item) => item.id === form.unitId);
+    if (!unit) {
+      notify('Selecione uma unidade válida.');
+      return;
+    }
+    setPackageSaving(true);
+    const { data, error } = await supabase.from('packages').insert({
+      condominium_id: condominium.id,
+      unit_id: unit.id,
+      recipient_name: form.resident.trim(),
       carrier: form.carrier,
-      note: form.note.trim() || undefined,
-      arrivedAt: 'Agora',
+      description: form.note.trim() || null,
+      received_by: session.user.id,
+    }).select('id,unit_id,recipient_name,carrier,description,status,received_at,collected_at').single();
+    setPackageSaving(false);
+    if (error || !data) {
+      notify(error?.message || 'Não foi possível registrar a encomenda.');
+      return;
+    }
+    const row = data as PackageRow;
+    const next: PackageRecord = {
+      id: `DO-${row.id.slice(0, 8).toLocaleUpperCase('pt-BR')}`,
+      databaseId: row.id,
+      unitId: row.unit_id,
+      apartment: unit.unitNumber,
+      building: unit.buildingName,
+      resident: row.recipient_name,
+      carrier: row.carrier,
+      note: row.description || undefined,
+      arrivedAt: formatDateTime(row.received_at),
+      receivedAt: row.received_at,
       status: 'waiting',
     };
     setPackages((current) => [next, ...current]);
     setShowNewPackage(false);
-    notify(`Encomenda registrada para o apartamento ${next.apartment}.`);
+    notify(`Encomenda registrada para a unidade ${next.apartment}.`);
   }
 
-  function collectPackage(id: string) {
-    setPackages((current) => current.map((item) => item.id === id ? { ...item, status: 'collected', collectedAt: 'Agora' } : item));
+  async function collectPackage(id: string) {
+    if (!supabase) return;
+    const current = packages.find((item) => item.id === id);
+    if (!current) return;
+    const { data, error } = await supabase.rpc('confirm_package_pickup', { p_package_id: current.databaseId });
+    if (error || !data) {
+      notify(error?.message || 'Não foi possível confirmar a retirada.');
+      return;
+    }
+    const collectedAtIso = (data as PackageRow).collected_at || new Date().toISOString();
+    setPackages((items) => items.map((item) => item.id === id ? { ...item, status: 'collected', collectedAt: formatDateTime(collectedAtIso), collectedAtIso } : item));
     notify('Retirada confirmada com sucesso.');
   }
 
@@ -777,17 +955,19 @@ export default function App() {
   const signOut = () => supabase?.auth.signOut();
 
   if (access?.kind === 'platform') return <PlatformDashboard displayName={displayName} email={email} onSignOut={signOut} />;
-  if (access?.kind === 'resident') return <ResidentApp packages={packages} onBack={signOut} onCollect={collectPackage} />;
   if (!access || access.kind === 'none') return <NoAccess email={email} onSignOut={signOut} />;
+  if (operationalLoading) return <main className="system-state"><Brand /><LoaderCircle className="spin" size={30} /><p>Carregando dados do condomínio…</p></main>;
+  if (operationalError || !condominium) return <main className="system-state"><Brand /><ShieldCheck size={30} /><h1>Não foi possível carregar o condomínio</h1><p>{operationalError || 'O vínculo está ativo, mas os dados do condomínio não foram encontrados.'}</p><button className="button button--outline" onClick={() => window.location.reload()} type="button"><RefreshCw size={17} />Tentar novamente</button></main>;
+  if (access.kind === 'resident') return <ResidentApp packages={packages} unit={units.find((unit) => unit.id === access.unitId) || null} displayName={displayName} onBack={signOut} onCollect={collectPackage} />;
 
   return (
     <>
       {view === 'doorman' ? (
-        <DoormanDashboard packages={packages} onNewPackage={() => setShowNewPackage(true)} onResidentView={() => setView('resident')} displayName={displayName} email={email} onSignOut={signOut} />
+        <DoormanDashboard condominium={condominium} units={units} packages={packages} onNewPackage={() => setShowNewPackage(true)} onResidentView={() => setView('resident')} displayName={displayName} email={email} onSignOut={signOut} />
       ) : (
-        <ResidentApp packages={packages} onBack={() => setView('doorman')} onCollect={collectPackage} />
+        <ResidentApp packages={packages} unit={units[0] || null} displayName={displayName} preview onBack={() => setView('doorman')} onCollect={collectPackage} />
       )}
-      {showNewPackage && <NewPackagePanel onClose={() => setShowNewPackage(false)} onSave={addPackage} />}
+      {showNewPackage && <NewPackagePanel units={units} saving={packageSaving} onClose={() => setShowNewPackage(false)} onSave={(form) => void addPackage(form)} />}
       {toast && <div className="toast" role="status"><Check size={18} /><span>{toast}</span></div>}
     </>
   );
