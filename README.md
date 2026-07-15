@@ -136,6 +136,11 @@ de usuários operacionais e trilha de auditoria. O acesso é concedido por
 vínculos: somente o administrador da plataforma cria condomínios, e os perfis
 administrativos e operacionais são ativados por convite.
 
+A entrada pública apresenta a solução e separa os acessos da portaria e do
+morador. O site inclui Termos de Uso, Política de Privacidade, Política de
+Cookies e preferência persistente no navegador. Atualmente não há cookies de
+publicidade nem ferramentas de analytics.
+
 Para gerar a versão publicada:
 
 ```bash

@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { initialPackages } from './data';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
+import PublicSite from './PublicSite';
 import type { AppView, PackageRecord } from './types';
 
 type NewPackageForm = {
@@ -66,82 +67,6 @@ function userInitials(name: string) {
     .slice(0, 2)
     .map((part) => part[0]?.toLocaleUpperCase('pt-BR'))
     .join('') || 'DO';
-}
-
-function AuthScreen() {
-  const [mode, setMode] = useState<'signin' | 'activate'>('signin');
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ tone: 'error' | 'success'; text: string } | null>(null);
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!supabase) return;
-
-    setBusy(true);
-    setMessage(null);
-
-    const result = mode === 'signin'
-      ? await supabase.auth.signInWithPassword({ email: email.trim(), password })
-      : await supabase.auth.signUp({
-          email: email.trim(),
-          password,
-          options: {
-            data: { full_name: fullName.trim() },
-            emailRedirectTo: new URL(import.meta.env.BASE_URL, window.location.origin).toString(),
-          },
-        });
-
-    setBusy(false);
-    if (result.error) {
-      setMessage({ tone: 'error', text: result.error.message });
-      return;
-    }
-
-    if (mode === 'activate' && !result.data.session) {
-      setMessage({ tone: 'success', text: 'Conta ativada. Confirme o e-mail para concluir seu acesso.' });
-    }
-  }
-
-  return (
-    <main className="auth-page">
-      <section className="auth-story">
-        <Brand />
-        <div>
-          <span className="eyebrow">GESTÃO DE ENCOMENDAS</span>
-          <h1>Portaria organizada.<br />Moradores informados.</h1>
-          <p>Uma operação segura para registrar chegadas, acompanhar retiradas e manter o histórico de cada condomínio.</p>
-        </div>
-        <small>DOMUS ONE · ACESSO SEGURO</small>
-      </section>
-      <section className="auth-panel">
-        <div className="auth-card">
-          <Brand />
-          <span className="eyebrow">{mode === 'signin' ? 'BEM-VINDO DE VOLTA' : 'ACESSO POR CONVITE'}</span>
-          <h2>{mode === 'signin' ? 'Entrar no Domus One' : 'Ativar seu acesso'}</h2>
-          <p>{mode === 'signin' ? 'Use seu e-mail de acesso à plataforma, portaria ou área do morador.' : 'Use exatamente o e-mail que recebeu o convite do administrador.'}</p>
-          <form onSubmit={submit}>
-            {mode === 'activate' && (
-              <label>Nome completo<input autoComplete="name" required value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Seu nome" /></label>
-            )}
-            <label>E-mail<input autoComplete="email" required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@exemplo.com" /></label>
-            <label>Senha<input autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} required minLength={8} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo de 8 caracteres" /></label>
-            {message && <div className={`auth-message auth-message--${message.tone}`} role="status">{message.text}</div>}
-            <button className="button button--primary button--full" disabled={busy} type="submit">
-              {busy ? <LoaderCircle className="spin" size={18} /> : <ShieldCheck size={18} />}
-              {busy ? 'Aguarde…' : mode === 'signin' ? 'Entrar com segurança' : 'Ativar convite'}
-            </button>
-          </form>
-          <button className="auth-switch" onClick={() => { setMode(mode === 'signin' ? 'activate' : 'signin'); setMessage(null); }} type="button">
-            {mode === 'signin' ? 'Recebeu um convite? Ativar acesso' : 'Já ativou seu acesso? Entrar'}
-          </button>
-          {mode === 'signin' && <div className="resident-access-note"><UserRound size={16} /><span>Morador? A solicitação de acesso será feita pelo código do seu condomínio.</span></div>}
-        </div>
-      </section>
-    </main>
-  );
 }
 
 type CondominiumSummary = {
@@ -585,7 +510,7 @@ export default function App() {
     return <main className="system-state"><Brand /><LoaderCircle className="spin" size={30} /><p>Validando sua sessão…</p></main>;
   }
 
-  if (!session) return <AuthScreen />;
+  if (!session) return <PublicSite />;
 
   const displayName = String(session.user.user_metadata.full_name || session.user.email?.split('@')[0] || 'Usuário');
   const email = session.user.email || '';

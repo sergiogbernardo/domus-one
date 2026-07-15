@@ -1,4 +1,4 @@
-const CACHE = 'domus-one-v1';
+const CACHE = 'domus-one-v2';
 const APP_SHELL = ['/domus-one/', '/domus-one/manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
