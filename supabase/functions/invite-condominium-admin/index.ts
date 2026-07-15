@@ -1,6 +1,6 @@
 import { withSupabase } from 'npm:@supabase/server';
 
-type InvitationRole = 'admin' | 'doorman' | 'resident';
+type InvitationRole = 'admin' | 'syndic' | 'deputy_syndic' | 'caretaker' | 'doorman' | 'resident';
 
 type InvitationRequest = {
   condominiumId?: string;
@@ -26,7 +26,7 @@ export default {
     if (!condominiumId || !email) {
       return Response.json({ ok: false, error: 'condominium_and_email_required' });
     }
-    if (!['admin', 'doorman', 'resident'].includes(role)) {
+    if (!['admin', 'syndic', 'deputy_syndic', 'caretaker', 'doorman', 'resident'].includes(role)) {
       return Response.json({ ok: false, error: 'invalid_role' });
     }
     if (role === 'resident' && !unitId) {
@@ -49,7 +49,7 @@ export default {
         .select('id')
         .eq('condominium_id', condominiumId)
         .eq('user_id', userId)
-        .eq('role', 'admin')
+        .in('role', ['admin', 'syndic', 'deputy_syndic'])
         .eq('status', 'active')
         .maybeSingle();
       if (!condominiumAccess) {
@@ -76,19 +76,19 @@ export default {
       if (error) return Response.json({ ok: false, error: error.message });
     }
 
-    if (role === 'doorman') {
+    if (['syndic', 'deputy_syndic', 'caretaker', 'doorman'].includes(role)) {
       const { data: existingMembership } = await context.supabase
         .from('staff_memberships')
         .select('id,status')
         .eq('condominium_id', condominiumId)
-        .eq('role', 'doorman')
+        .eq('role', role)
         .eq('invited_email', email)
         .maybeSingle();
       const operation = existingMembership?.status === 'inactive'
         ? context.supabase.rpc('set_staff_member_status', { p_membership_id: existingMembership.id, p_active: true })
         : existingMembership
           ? Promise.resolve({ error: null })
-          : context.supabase.rpc('invite_staff_member', { p_condominium_id: condominiumId, p_email: email, p_role: 'doorman' });
+          : context.supabase.rpc('invite_staff_member', { p_condominium_id: condominiumId, p_email: email, p_role: role });
       const { error } = await operation;
       if (error) return Response.json({ ok: false, error: error.message });
     }
