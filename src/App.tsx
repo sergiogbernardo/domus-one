@@ -1,4 +1,5 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import {
   Archive,
   ArrowLeft,
@@ -9,6 +10,8 @@ import {
   ChevronDown,
   Clock3,
   LayoutDashboard,
+  LoaderCircle,
+  LogOut,
   Menu,
   PackageCheck,
   PackagePlus,
@@ -20,6 +23,7 @@ import {
   X,
 } from 'lucide-react';
 import { initialPackages } from './data';
+import { isSupabaseConfigured, supabase } from './lib/supabase';
 import type { AppView, PackageRecord } from './types';
 
 type NewPackageForm = {
@@ -52,7 +56,91 @@ function Brand({ compact = false }: { compact?: boolean }) {
   );
 }
 
-function Sidebar({ onResidentView }: { onResidentView: () => void }) {
+function userInitials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toLocaleUpperCase('pt-BR'))
+    .join('') || 'DO';
+}
+
+function AuthScreen() {
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ tone: 'error' | 'success'; text: string } | null>(null);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase) return;
+
+    setBusy(true);
+    setMessage(null);
+
+    const result = mode === 'signin'
+      ? await supabase.auth.signInWithPassword({ email: email.trim(), password })
+      : await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: {
+            data: { full_name: fullName.trim() },
+            emailRedirectTo: new URL(import.meta.env.BASE_URL, window.location.origin).toString(),
+          },
+        });
+
+    setBusy(false);
+    if (result.error) {
+      setMessage({ tone: 'error', text: result.error.message });
+      return;
+    }
+
+    if (mode === 'signup' && !result.data.session) {
+      setMessage({ tone: 'success', text: 'Conta criada. Confirme o e-mail para entrar no Domus One.' });
+    }
+  }
+
+  return (
+    <main className="auth-page">
+      <section className="auth-story">
+        <Brand />
+        <div>
+          <span className="eyebrow">GESTÃO DE ENCOMENDAS</span>
+          <h1>Portaria organizada.<br />Moradores informados.</h1>
+          <p>Uma operação segura para registrar chegadas, acompanhar retiradas e manter o histórico de cada condomínio.</p>
+        </div>
+        <small>DOMUS ONE · ACESSO SEGURO</small>
+      </section>
+      <section className="auth-panel">
+        <div className="auth-card">
+          <Brand />
+          <span className="eyebrow">{mode === 'signin' ? 'BEM-VINDO DE VOLTA' : 'PRIMEIRO ACESSO'}</span>
+          <h2>{mode === 'signin' ? 'Entrar no Domus One' : 'Criar sua conta'}</h2>
+          <p>{mode === 'signin' ? 'Use seu e-mail de acesso à portaria ou área do morador.' : 'Depois do cadastro, seu acesso será vinculado ao condomínio.'}</p>
+          <form onSubmit={submit}>
+            {mode === 'signup' && (
+              <label>Nome completo<input autoComplete="name" required value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Seu nome" /></label>
+            )}
+            <label>E-mail<input autoComplete="email" required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@exemplo.com" /></label>
+            <label>Senha<input autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} required minLength={8} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo de 8 caracteres" /></label>
+            {message && <div className={`auth-message auth-message--${message.tone}`} role="status">{message.text}</div>}
+            <button className="button button--primary button--full" disabled={busy} type="submit">
+              {busy ? <LoaderCircle className="spin" size={18} /> : <ShieldCheck size={18} />}
+              {busy ? 'Aguarde…' : mode === 'signin' ? 'Entrar com segurança' : 'Criar conta'}
+            </button>
+          </form>
+          <button className="auth-switch" onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setMessage(null); }} type="button">
+            {mode === 'signin' ? 'Ainda não tem acesso? Criar conta' : 'Já possui conta? Entrar'}
+          </button>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function Sidebar({ onResidentView, displayName, email, onSignOut }: { onResidentView: () => void; displayName: string; email: string; onSignOut: () => void }) {
   return (
     <aside className="sidebar">
       <Brand />
@@ -76,9 +164,9 @@ function Sidebar({ onResidentView }: { onResidentView: () => void }) {
         <span><small>Pré-visualizar</small>Área do morador</span>
       </button>
       <div className="operator-card">
-        <span className="avatar">LA</span>
-        <span><strong>Lucas Almeida</strong><small>Porteiro · Turno manhã</small></span>
-        <ChevronDown size={16} />
+        <span className="avatar">{userInitials(displayName)}</span>
+        <span><strong>{displayName}</strong><small>{email}</small></span>
+        <button className="operator-card__logout" onClick={onSignOut} type="button" aria-label="Sair"><LogOut size={16} /></button>
       </div>
     </aside>
   );
@@ -150,7 +238,7 @@ function NewPackagePanel({ onClose, onSave }: { onClose: () => void; onSave: (fo
   );
 }
 
-function DoormanDashboard({ packages, onNewPackage, onResidentView }: { packages: PackageRecord[]; onNewPackage: () => void; onResidentView: () => void }) {
+function DoormanDashboard({ packages, onNewPackage, onResidentView, displayName, email, onSignOut }: { packages: PackageRecord[]; onNewPackage: () => void; onResidentView: () => void; displayName: string; email: string; onSignOut: () => void }) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'waiting' | 'all'>('waiting');
   const visiblePackages = useMemo(() => packages.filter((item) => {
@@ -161,7 +249,7 @@ function DoormanDashboard({ packages, onNewPackage, onResidentView }: { packages
 
   return (
     <div className="app-shell">
-      <Sidebar onResidentView={onResidentView} />
+      <Sidebar onResidentView={onResidentView} displayName={displayName} email={email} onSignOut={onSignOut} />
       <main className="dashboard" id="painel">
         <header className="topbar">
           <button className="mobile-menu" type="button" aria-label="Abrir menu"><Menu /></button>
@@ -171,7 +259,7 @@ function DoormanDashboard({ packages, onNewPackage, onResidentView }: { packages
         </header>
         <div className="dashboard__content">
           <section className="page-heading">
-            <div><span className="eyebrow">PORTARIA · TURNO DA MANHÃ</span><h1>Bom dia, Lucas.</h1><p>Acompanhe o que chegou e mantenha a portaria em ordem.</p></div>
+            <div><span className="eyebrow">PORTARIA · OPERAÇÃO ATIVA</span><h1>Olá, {displayName.split(' ')[0]}.</h1><p>Acompanhe o que chegou e mantenha a portaria em ordem.</p></div>
             <button className="button button--primary button--large" onClick={onNewPackage} type="button"><PackagePlus size={19} />Nova encomenda</button>
           </section>
           <section className="metrics" aria-label="Resumo da portaria">
@@ -270,10 +358,31 @@ function ResidentApp({ packages, onBack, onCollect }: { packages: PackageRecord[
 }
 
 export default function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [view, setView] = useState<AppView>('doorman');
   const [packages, setPackages] = useState(initialPackages);
   const [showNewPackage, setShowNewPackage] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!supabase) {
+      setAuthLoading(false);
+      return;
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setAuthLoading(false);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setAuthLoading(false);
+    });
+
+    return () => listener.subscription.unsubscribe();
+  }, []);
 
   function notify(message: string) {
     setToast(message);
@@ -300,10 +409,23 @@ export default function App() {
     notify('Retirada confirmada com sucesso.');
   }
 
+  if (!isSupabaseConfigured) {
+    return <main className="system-state"><Brand /><ShieldCheck size={30} /><h1>Configuração pendente</h1><p>Defina as variáveis públicas do Supabase para liberar o acesso.</p></main>;
+  }
+
+  if (authLoading) {
+    return <main className="system-state"><Brand /><LoaderCircle className="spin" size={30} /><p>Validando sua sessão…</p></main>;
+  }
+
+  if (!session) return <AuthScreen />;
+
+  const displayName = String(session.user.user_metadata.full_name || session.user.email?.split('@')[0] || 'Usuário');
+  const email = session.user.email || '';
+
   return (
     <>
       {view === 'doorman' ? (
-        <DoormanDashboard packages={packages} onNewPackage={() => setShowNewPackage(true)} onResidentView={() => setView('resident')} />
+        <DoormanDashboard packages={packages} onNewPackage={() => setShowNewPackage(true)} onResidentView={() => setView('resident')} displayName={displayName} email={email} onSignOut={() => supabase?.auth.signOut()} />
       ) : (
         <ResidentApp packages={packages} onBack={() => setView('doorman')} onCollect={collectPackage} />
       )}

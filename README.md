@@ -109,6 +109,7 @@ A especificação completa está em [Direção visual](docs/direcao-visual.md).
 - [Arquitetura e modelo de dados](docs/arquitetura-e-dados.md)
 - [Direção visual](docs/direcao-visual.md)
 - [Decisões em aberto](docs/decisoes-em-aberto.md)
+- [Bootstrap do Supabase](docs/supabase-bootstrap.md)
 
 ## Desenvolvimento
 
@@ -119,7 +120,9 @@ npm install
 npm run dev
 ```
 
-A primeira versão navegável contém dados demonstrativos e permite:
+A versão atual já usa o Supabase Auth para criar conta, entrar, restaurar a
+sessão e sair. Depois da autenticação, a operação navegável ainda usa dados
+demonstrativos e permite:
 
 - pesquisar e filtrar encomendas no painel da portaria;
 - registrar uma nova encomenda durante a sessão;
@@ -127,9 +130,10 @@ A primeira versão navegável contém dados demonstrativos e permite:
 - confirmar uma retirada e visualizar o histórico atualizado;
 - testar a adaptação da interface para desktop e celular.
 
-Os dados demonstrativos ainda não são persistidos. O cliente Supabase e as
-variáveis públicas já estão preparados, mas autenticação, banco e RLS serão
-implementados na próxima fatia vertical.
+O banco multi-condomínio já está criado, com 10 tabelas públicas protegidas por
+RLS, funções controladas para aprovar moradores e confirmar retiradas, limite
+de usuários operacionais e trilha de auditoria. A próxima fatia conecta o
+painel e a área do morador a esses registros persistentes.
 
 Para gerar a versão publicada:
 
@@ -153,6 +157,6 @@ http://localhost:5173/domus-one/
 
 ## Próximo passo
 
-Revisar a experiência demonstrativa com um porteiro e pelo menos um morador.
-Depois, criar o projeto Supabase de desenvolvimento e substituir os dados de
-demonstração por autenticação, registros persistentes e políticas RLS.
+Criar o primeiro operador da plataforma, cadastrar o condomínio inicial e
+conectar o onboarding multi-condomínio ao banco. Em seguida, substituir a lista
+demonstrativa de encomendas por consultas e mutations protegidas pelo RLS.
