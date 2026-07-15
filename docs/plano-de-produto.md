@@ -107,10 +107,15 @@ Critério de saída: gestão autoriza substituir o livro no escopo do piloto.
 
 ### Fase 5 — evolução
 
-- notificações push e canais externos;
+- completar a PWA instalável e adicionar Web Push;
+- cadastrar telefone, consentimento e preferências de notificação;
+- oferecer WhatsApp oficial como módulo premium;
 - leitura de códigos e fotos, se justificadas;
-- empacotamento com Tauri/Capacitor;
+- empacotamento Linux e Android com Tauri;
 - relatórios e suporte a operações maiores.
+
+As hipóteses comerciais, limites de infraestrutura e sequência de distribuição
+estão registradas em [Estratégia comercial e evolução](estrategia-comercial-e-evolucao.md).
 
 ## Ordem recomendada para desenvolvimento
 
