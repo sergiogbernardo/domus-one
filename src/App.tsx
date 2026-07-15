@@ -275,7 +275,7 @@ function PlatformDashboard({ displayName, email, onSignOut }: { displayName: str
       .order('created_at', { ascending: false });
     setAdministratorsLoading(false);
     if (loadError) setError(loadError.message);
-    else setAdministrators((data || []) as unknown as CondominiumAdministrator[]);
+    else setAdministrators(((data || []) as unknown as CondominiumAdministrator[]).filter((item) => item.invited_email?.toLocaleLowerCase('pt-BR') !== email.toLocaleLowerCase('pt-BR')));
   }
 
   useEffect(() => { void Promise.all([loadCondominiums(), loadAdministrators()]); }, []);
