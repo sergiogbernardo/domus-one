@@ -1,8 +1,9 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
-export default defineConfig(({ command }) => {
-  const supabaseUrl = process.env.VITE_SUPABASE_URL;
+export default defineConfig(({ command, mode }) => {
+  const env = loadEnv(mode, process.cwd(), 'VITE_');
+  const supabaseUrl = env.VITE_SUPABASE_URL;
   const supabaseOrigin = supabaseUrl ? new URL(supabaseUrl).origin : null;
   const realtimeOrigin = supabaseOrigin?.replace(/^https:/, 'wss:');
 
