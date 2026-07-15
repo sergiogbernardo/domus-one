@@ -216,6 +216,30 @@ h1, h2, h3, p { margin-top: 0; }
 .operational-notice { display: flex; align-items: center; gap: 10px; margin: -7px 0 18px; padding: 12px 14px; color: #76551d; background: var(--amber-pale); border: 1px solid #eed8ad; border-radius: 9px; font-size: 10px; line-height: 1.5; }
 .operational-notice svg { flex: 0 0 auto; color: var(--amber); }
 .operational-notice strong { margin-right: 4px; }
+.unit-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 220px)); gap: 12px; margin-bottom: 20px; }
+.unit-metrics article { display: flex; align-items: center; gap: 12px; padding: 16px; background: white; border: 1px solid var(--stone-200); border-radius: 10px; box-shadow: var(--shadow-sm); }
+.unit-metrics article > svg { width: 38px; height: 38px; padding: 9px; color: var(--mineral); background: var(--mineral-pale); border-radius: 9px; }
+.unit-metrics span { display: grid; gap: 2px; }
+.unit-metrics strong { color: var(--navy-950); font: 600 20px/1 'Manrope', sans-serif; }
+.unit-metrics small { color: var(--slate); font-size: 9px; }
+.units-page > .auth-message { margin-bottom: 15px; }
+.structure-forms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 20px; }
+.structure-forms form { display: grid; gap: 13px; padding: 20px; background: white; border: 1px solid var(--stone-200); border-radius: 11px; box-shadow: var(--shadow-sm); }
+.structure-forms h2, .structure-list h2 { margin: 0 0 4px; color: var(--navy-950); font: 600 16px/1.2 'Manrope', sans-serif; }
+.structure-forms p, .structure-list p { margin: 0; color: var(--slate); font-size: 9px; }
+.structure-forms label { display: grid; gap: 6px; color: #3b4851; font-size: 10px; font-weight: 600; }
+.structure-forms label small { color: var(--slate); font-weight: 400; }
+.structure-forms input, .structure-forms select { width: 100%; height: 42px; padding: 0 11px; color: var(--graphite); background: white; border: 1px solid var(--stone-300); border-radius: 8px; outline: 0; }
+.structure-forms input:focus, .structure-forms select:focus { border-color: #6bafa1; box-shadow: 0 0 0 3px rgb(24 122 104 / 9%); }
+.structure-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.structure-forms .button { justify-self: end; }
+.structure-list { overflow: hidden; background: white; border: 1px solid var(--stone-200); border-radius: 11px; box-shadow: var(--shadow-sm); }
+.structure-list > header { padding: 18px 20px; border-bottom: 1px solid var(--stone-200); }
+.structure-table__head, .structure-table article { display: grid; grid-template-columns: .7fr 1.5fr .8fr .6fr; align-items: center; gap: 14px; padding: 0 20px; }
+.structure-table__head { min-height: 36px; color: #8c989f; background: #fbfcfc; font-size: 8px; font-weight: 700; letter-spacing: .1em; }
+.structure-table article { min-height: 56px; color: var(--slate); border-top: 1px solid var(--stone-200); font-size: 10px; }
+.structure-table article strong { color: var(--graphite); font-size: 12px; }
+.structure-table article em { justify-self: start; padding: 4px 8px; color: #176b5a; background: var(--mineral-pale); border-radius: 10px; font-size: 8px; font-style: normal; font-weight: 700; }
 .button { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 16px; border: 1px solid transparent; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; transition: transform .15s, background .15s, border-color .15s; }
 .button:active { transform: translateY(1px); }
 .button:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
@@ -406,6 +430,11 @@ h1, h2, h3, p { margin-top: 0; }
   .mobile-menu { width: 38px; height: 38px; display: grid; place-items: center; padding: 0; color: var(--navy-700); background: transparent; border: 0; }
   .mobile-avatar { width: 34px; height: 34px; display: grid; place-items: center; color: #d7ece7; background: #205c52; border: 0; border-radius: 50%; font-size: 9px; font-weight: 700; }
   .dashboard__content { padding: 24px 17px 36px; }
+  .unit-metrics { grid-template-columns: 1fr 1fr; }
+  .structure-forms { grid-template-columns: 1fr; }
+  .structure-table__head { display: none; }
+  .structure-table { display: grid; gap: 9px; padding: 12px; }
+  .structure-table article { min-height: 82px; grid-template-columns: 1fr 1fr; gap: 8px; padding: 13px; background: white; border: 1px solid var(--stone-200); border-radius: 9px; }
   .page-heading { align-items: flex-start; margin-bottom: 21px; }
   .page-heading h1 { font-size: 26px; }
   .page-heading p { max-width: 260px; line-height: 1.5; }

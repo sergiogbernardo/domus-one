@@ -58,7 +58,17 @@ type OperationalUnit = {
   unitNumber: string;
   buildingId: string;
   buildingName: string;
+  floorLabel: string | null;
 };
+
+type OperationalBuilding = {
+  id: string;
+  name: string;
+  code: string;
+  floors: number | null;
+};
+
+type CreateResult = { ok: boolean; error?: string };
 
 type PackageRow = {
   id: string;
@@ -516,7 +526,7 @@ type AccessContext =
   | { kind: 'resident'; condominiumId: string; unitId: string }
   | { kind: 'none' };
 
-function Sidebar({ collapsed, onToggle, onResidentView, condominiumName, waitingCount, displayName, email, onSignOut }: { collapsed: boolean; onToggle: () => void; onResidentView: () => void; condominiumName: string; waitingCount: number; displayName: string; email: string; onSignOut: () => void }) {
+function Sidebar({ collapsed, activeSection, onNavigate, onToggle, onResidentView, condominiumName, waitingCount, displayName, email, onSignOut }: { collapsed: boolean; activeSection: 'dashboard' | 'units'; onNavigate: (section: 'dashboard' | 'units') => void; onToggle: () => void; onResidentView: () => void; condominiumName: string; waitingCount: number; displayName: string; email: string; onSignOut: () => void }) {
   return (
     <aside className="sidebar">
       <div className="sidebar-brand-row"><Brand /><button className="sidebar-toggle" onClick={onToggle} type="button" aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}><Menu size={18} /></button></div>
@@ -526,11 +536,11 @@ function Sidebar({ collapsed, onToggle, onResidentView, condominiumName, waiting
       </div>
       <nav aria-label="Navegação principal">
         <p>OPERAÇÃO</p>
-        <a className="nav-link nav-link--active" href="#painel"><LayoutDashboard size={19} />Painel</a>
-        <a className="nav-link" href="#encomendas"><Boxes size={19} />Encomendas{waitingCount > 0 && <span>{waitingCount}</span>}</a>
+        <a className={`nav-link ${activeSection === 'dashboard' ? 'nav-link--active' : ''}`} href="#painel" onClick={() => onNavigate('dashboard')}><LayoutDashboard size={19} />Painel</a>
+        <a className="nav-link" href="#encomendas" onClick={() => onNavigate('dashboard')}><Boxes size={19} />Encomendas{waitingCount > 0 && <span>{waitingCount}</span>}</a>
         <a className="nav-link" href="#historico"><Archive size={19} />Histórico</a>
         <p>GESTÃO</p>
-        <a className="nav-link" href="#unidades"><Building2 size={19} />Unidades</a>
+        <a className={`nav-link ${activeSection === 'units' ? 'nav-link--active' : ''}`} href="#unidades" onClick={() => onNavigate('units')}><Building2 size={19} />Unidades</a>
         <a className="nav-link" href="#pessoas"><UsersRound size={19} />Pessoas</a>
         <a className="nav-link" href="#configuracoes"><Settings size={19} />Configurações</a>
       </nav>
@@ -613,8 +623,58 @@ function NewPackagePanel({ units, saving, onClose, onSave }: { units: Operationa
   );
 }
 
-function DoormanDashboard({ condominium, units, packages, onNewPackage, onResidentView, displayName, email, onSignOut }: { condominium: OperationalCondominium; units: OperationalUnit[]; packages: PackageRecord[]; onNewPackage: () => void; onResidentView: () => void; displayName: string; email: string; onSignOut: () => void }) {
+function UnitsManagement({ condominium, buildings, units, canManage, onCreateBuilding, onCreateUnit }: { condominium: OperationalCondominium; buildings: OperationalBuilding[]; units: OperationalUnit[]; canManage: boolean; onCreateBuilding: (name: string, code: string, floors: string) => Promise<CreateResult>; onCreateUnit: (buildingId: string, unitNumber: string, floorLabel: string) => Promise<CreateResult> }) {
+  const [buildingName, setBuildingName] = useState('');
+  const [buildingCode, setBuildingCode] = useState('');
+  const [buildingFloors, setBuildingFloors] = useState('');
+  const [unitBuildingId, setUnitBuildingId] = useState('');
+  const [unitNumber, setUnitNumber] = useState('');
+  const [floorLabel, setFloorLabel] = useState('');
+  const [savingBuilding, setSavingBuilding] = useState(false);
+  const [savingUnit, setSavingUnit] = useState(false);
+  const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
+
+  async function submitBuilding(event: FormEvent) {
+    event.preventDefault();
+    setSavingBuilding(true);
+    setMessage(null);
+    const result = await onCreateBuilding(buildingName, buildingCode, buildingFloors);
+    setSavingBuilding(false);
+    if (!result.ok) setMessage({ tone: 'error', text: result.error || 'Não foi possível cadastrar o bloco.' });
+    else {
+      setBuildingName(''); setBuildingCode(''); setBuildingFloors('');
+      setMessage({ tone: 'success', text: 'Bloco cadastrado com sucesso.' });
+    }
+  }
+
+  async function submitUnit(event: FormEvent) {
+    event.preventDefault();
+    setSavingUnit(true);
+    setMessage(null);
+    const result = await onCreateUnit(unitBuildingId, unitNumber, floorLabel);
+    setSavingUnit(false);
+    if (!result.ok) setMessage({ tone: 'error', text: result.error || 'Não foi possível cadastrar a unidade.' });
+    else {
+      setUnitNumber(''); setFloorLabel('');
+      setMessage({ tone: 'success', text: 'Unidade cadastrada e liberada para encomendas.' });
+    }
+  }
+
+  return <section className="units-page">
+    <header className="page-heading"><div><span className="eyebrow">GESTÃO · ESTRUTURA</span><h1>Blocos e unidades</h1><p>Organize a estrutura do {condominium.name} usada na portaria e no cadastro dos moradores.</p></div></header>
+    <div className="unit-metrics"><article><Building2 size={20} /><span><strong>{buildings.length}</strong><small>Blocos cadastrados</small></span></article><article><Boxes size={20} /><span><strong>{units.length}</strong><small>Unidades ativas</small></span></article></div>
+    {message && <div className={`auth-message auth-message--${message.tone}`}>{message.text}</div>}
+    {canManage && <div className="structure-forms">
+      <form onSubmit={submitBuilding}><div><span className="eyebrow">NOVO BLOCO</span><h2>Cadastrar bloco</h2><p>Ex.: Torre A, Bloco Único ou Edifício Principal.</p></div><label>Nome<input required value={buildingName} onChange={(event) => { setBuildingName(event.target.value); if (!buildingCode) setBuildingCode(slugify(event.target.value).replace(/-/g, '').slice(0, 12).toLocaleUpperCase('pt-BR')); }} placeholder="Torre A" /></label><div className="structure-form-row"><label>Código<input required maxLength={32} value={buildingCode} onChange={(event) => setBuildingCode(event.target.value.toLocaleUpperCase('pt-BR'))} placeholder="TORREA" /></label><label>Andares<input min="1" max="300" type="number" value={buildingFloors} onChange={(event) => setBuildingFloors(event.target.value)} placeholder="12" /></label></div><button className="button button--primary" disabled={savingBuilding} type="submit">{savingBuilding ? <LoaderCircle className="spin" size={17} /> : <Plus size={17} />}Cadastrar bloco</button></form>
+      <form onSubmit={submitUnit}><div><span className="eyebrow">NOVA UNIDADE</span><h2>Cadastrar unidade</h2><p>A unidade ficará imediatamente disponível na portaria.</p></div><label>Bloco<select required value={unitBuildingId} onChange={(event) => setUnitBuildingId(event.target.value)}><option value="">Selecionar bloco</option>{buildings.map((building) => <option key={building.id} value={building.id}>{building.name}</option>)}</select></label><div className="structure-form-row"><label>Número<input required value={unitNumber} onChange={(event) => setUnitNumber(event.target.value)} placeholder="1204" /></label><label>Andar <small>Opcional</small><input value={floorLabel} onChange={(event) => setFloorLabel(event.target.value)} placeholder="12º" /></label></div><button className="button button--primary" disabled={savingUnit || buildings.length === 0} type="submit">{savingUnit ? <LoaderCircle className="spin" size={17} /> : <Plus size={17} />}Cadastrar unidade</button></form>
+    </div>}
+    <section className="structure-list"><header><div><h2>Unidades cadastradas</h2><p>Estrutura atualmente ativa no condomínio.</p></div></header>{units.length > 0 ? <div className="structure-table"><div className="structure-table__head"><span>UNIDADE</span><span>BLOCO</span><span>ANDAR</span><span>STATUS</span></div>{units.map((unit) => <article key={unit.id}><strong>{unit.unitNumber}</strong><span>{unit.buildingName}</span><span>{unit.floorLabel || '—'}</span><em>Ativa</em></article>)}</div> : <div className="empty-state"><Building2 size={25} /><strong>Nenhuma unidade cadastrada</strong><span>Cadastre primeiro um bloco e depois inclua suas unidades.</span></div>}</section>
+  </section>;
+}
+
+function DoormanDashboard({ condominium, buildings, units, packages, canManage, onCreateBuilding, onCreateUnit, onNewPackage, onResidentView, displayName, email, onSignOut }: { condominium: OperationalCondominium; buildings: OperationalBuilding[]; units: OperationalUnit[]; packages: PackageRecord[]; canManage: boolean; onCreateBuilding: (name: string, code: string, floors: string) => Promise<CreateResult>; onCreateUnit: (buildingId: string, unitNumber: string, floorLabel: string) => Promise<CreateResult>; onNewPackage: () => void; onResidentView: () => void; displayName: string; email: string; onSignOut: () => void }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [section, setSection] = useState<'dashboard' | 'units'>(() => window.location.hash === '#unidades' ? 'units' : 'dashboard');
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'waiting' | 'all'>('waiting');
   const visiblePackages = useMemo(() => packages.filter((item) => {
@@ -630,15 +690,16 @@ function DoormanDashboard({ condominium, units, packages, onNewPackage, onReside
 
   return (
     <div className={`app-shell ${sidebarCollapsed ? 'app-shell--collapsed' : ''}`}>
-      <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((current) => !current)} onResidentView={onResidentView} condominiumName={condominium.name} waitingCount={waitingCount} displayName={displayName} email={email} onSignOut={onSignOut} />
+      <Sidebar collapsed={sidebarCollapsed} activeSection={section} onNavigate={setSection} onToggle={() => setSidebarCollapsed((current) => !current)} onResidentView={onResidentView} condominiumName={condominium.name} waitingCount={waitingCount} displayName={displayName} email={email} onSignOut={onSignOut} />
       <main className="dashboard" id="painel">
         <header className="topbar">
           <button className="mobile-menu" type="button" aria-label="Abrir menu"><Menu /></button>
           <Brand compact />
           <span className="topbar__date">{currentDate}</span>
-          <div className="topbar__actions"><button className="icon-button notification" aria-label="Notificações"><Bell size={20} /><i /></button><button className="mobile-avatar" type="button">LA</button></div>
+          <div className="topbar__actions"><button className="icon-button notification" aria-label="Notificações"><Bell size={20} /><i /></button><button className="mobile-avatar" type="button">{userInitials(displayName)}</button></div>
         </header>
         <div className="dashboard__content">
+          {section === 'units' ? <UnitsManagement condominium={condominium} buildings={buildings} units={units} canManage={canManage} onCreateBuilding={onCreateBuilding} onCreateUnit={onCreateUnit} /> : <>
           <section className="page-heading">
             <div><span className="eyebrow">PORTARIA · OPERAÇÃO ATIVA</span><h1>Olá, {displayName.split(' ')[0]}.</h1><p>Acompanhe o que chegou e mantenha a portaria em ordem.</p></div>
             <button className="button button--primary button--large" disabled={units.length === 0} onClick={onNewPackage} title={units.length === 0 ? 'Cadastre uma unidade antes de receber encomendas' : undefined} type="button"><PackagePlus size={19} />Nova encomenda</button>
@@ -675,6 +736,7 @@ function DoormanDashboard({ condominium, units, packages, onNewPackage, onReside
             </div>
             <footer className="table-footer"><span>Mostrando {visiblePackages.length} registros</span><button type="button">Ver todas as encomendas <span>→</span></button></footer>
           </section>
+          </>}
         </div>
       </main>
     </div>
@@ -746,6 +808,7 @@ export default function App() {
   const [accessLoading, setAccessLoading] = useState(false);
   const [view, setView] = useState<AppView>('doorman');
   const [condominium, setCondominium] = useState<OperationalCondominium | null>(null);
+  const [buildings, setBuildings] = useState<OperationalBuilding[]>([]);
   const [units, setUnits] = useState<OperationalUnit[]>([]);
   const [packages, setPackages] = useState<PackageRecord[]>([]);
   const [operationalLoading, setOperationalLoading] = useState(false);
@@ -806,6 +869,7 @@ export default function App() {
   useEffect(() => {
     if (!supabase || !access || (access.kind !== 'staff' && access.kind !== 'resident')) {
       setCondominium(null);
+      setBuildings([]);
       setUnits([]);
       setPackages([]);
       setOperationalError(null);
@@ -829,8 +893,8 @@ export default function App() {
 
       const [condominiumResult, buildingsResult, unitsResult, packagesResult] = await Promise.all([
         supabase.from('condominiums').select('id,name,registration_code').eq('id', condominiumId).single(),
-        supabase.from('buildings').select('id,name').eq('condominium_id', condominiumId).order('sort_order'),
-        supabase.from('units').select('id,unit_number,building_id').eq('condominium_id', condominiumId).eq('status', 'active').order('unit_number'),
+        supabase.from('buildings').select('id,name,code,floors').eq('condominium_id', condominiumId).order('sort_order'),
+        supabase.from('units').select('id,unit_number,building_id,floor_label').eq('condominium_id', condominiumId).eq('status', 'active').order('unit_number'),
         packageQuery,
       ]);
       if (!active) return;
@@ -847,6 +911,7 @@ export default function App() {
         unitNumber: unit.unit_number,
         buildingId: unit.building_id,
         buildingName: buildingNames.get(unit.building_id) || 'Bloco não informado',
+        floorLabel: unit.floor_label,
       }));
       const unitsById = new Map(nextUnits.map((unit) => [unit.id, unit]));
       const nextPackages: PackageRecord[] = ((packagesResult.data || []) as PackageRow[]).flatMap((item) => {
@@ -873,6 +938,7 @@ export default function App() {
         name: condominiumResult.data.name,
         registrationCode: condominiumResult.data.registration_code,
       });
+      setBuildings((buildingsResult.data || []).map((building) => ({ id: building.id, name: building.name, code: building.code, floors: building.floors })));
       setUnits(nextUnits);
       setPackages(nextPackages);
       setOperationalLoading(false);
@@ -884,6 +950,36 @@ export default function App() {
   function notify(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(null), 3200);
+  }
+
+  async function createBuilding(name: string, code: string, floors: string): Promise<CreateResult> {
+    if (!supabase || !condominium) return { ok: false, error: 'Condomínio não carregado.' };
+    const { data, error } = await supabase.from('buildings').insert({
+      condominium_id: condominium.id,
+      name: name.trim(),
+      code: code.trim().toLocaleUpperCase('pt-BR'),
+      floors: floors ? Number(floors) : null,
+      sort_order: buildings.length,
+    }).select('id,name,code,floors').single();
+    if (error || !data) return { ok: false, error: error?.message.includes('duplicate') ? 'Já existe um bloco com este código.' : error?.message };
+    setBuildings((current) => [...current, { id: data.id, name: data.name, code: data.code, floors: data.floors }]);
+    return { ok: true };
+  }
+
+  async function createUnit(buildingId: string, unitNumber: string, floorLabel: string): Promise<CreateResult> {
+    if (!supabase || !condominium) return { ok: false, error: 'Condomínio não carregado.' };
+    const building = buildings.find((item) => item.id === buildingId);
+    if (!building) return { ok: false, error: 'Selecione um bloco válido.' };
+    const { data, error } = await supabase.from('units').insert({
+      condominium_id: condominium.id,
+      building_id: building.id,
+      unit_number: unitNumber.trim(),
+      floor_label: floorLabel.trim() || null,
+    }).select('id,unit_number,building_id,floor_label').single();
+    if (error || !data) return { ok: false, error: error?.message.includes('duplicate') ? 'Esta unidade já existe no bloco selecionado.' : error?.message };
+    const nextUnit: OperationalUnit = { id: data.id, unitNumber: data.unit_number, buildingId: data.building_id, buildingName: building.name, floorLabel: data.floor_label };
+    setUnits((current) => [...current, nextUnit].sort((left, right) => left.unitNumber.localeCompare(right.unitNumber, 'pt-BR', { numeric: true })));
+    return { ok: true };
   }
 
   async function addPackage(form: NewPackageForm) {
@@ -963,7 +1059,7 @@ export default function App() {
   return (
     <>
       {view === 'doorman' ? (
-        <DoormanDashboard condominium={condominium} units={units} packages={packages} onNewPackage={() => setShowNewPackage(true)} onResidentView={() => setView('resident')} displayName={displayName} email={email} onSignOut={signOut} />
+        <DoormanDashboard condominium={condominium} buildings={buildings} units={units} packages={packages} canManage={access.role === 'admin'} onCreateBuilding={createBuilding} onCreateUnit={createUnit} onNewPackage={() => setShowNewPackage(true)} onResidentView={() => setView('resident')} displayName={displayName} email={email} onSignOut={signOut} />
       ) : (
         <ResidentApp packages={packages} unit={units[0] || null} displayName={displayName} preview onBack={() => setView('doorman')} onCollect={collectPackage} />
       )}
