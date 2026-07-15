@@ -1,0 +1,12 @@
+{
+  "name": "Domus One",
+  "short_name": "Domus One",
+  "id": "/domus-one/",
+  "description": "Gestão inteligente de encomendas para condomínios.",
+  "start_url": "/domus-one/",
+  "scope": "/domus-one/",
+  "display": "standalone",
+  "background_color": "#f7f7f4",
+  "theme_color": "#0b1623",
+  "lang": "pt-BR"
+}

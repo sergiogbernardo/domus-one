@@ -1,0 +1,55 @@
+import type { PackageRecord } from './types';
+
+export const initialPackages: PackageRecord[] = [
+  {
+    id: 'DO-2841',
+    apartment: '1204',
+    resident: 'Marina Azevedo',
+    carrier: 'Amazon',
+    arrivedAt: 'Hoje, 09:42',
+    status: 'waiting',
+  },
+  {
+    id: 'DO-2840',
+    apartment: '807',
+    resident: 'Ricardo Mendes',
+    carrier: 'Correios',
+    arrivedAt: 'Hoje, 08:17',
+    note: 'Caixa média',
+    status: 'waiting',
+  },
+  {
+    id: 'DO-2839',
+    apartment: '502',
+    resident: 'Helena Costa',
+    carrier: 'Mercado Livre',
+    arrivedAt: 'Ontem, 18:36',
+    status: 'waiting',
+  },
+  {
+    id: 'DO-2838',
+    apartment: '1204',
+    resident: 'Marina Azevedo',
+    carrier: 'Loggi',
+    arrivedAt: 'Ontem, 16:08',
+    note: 'Envelope',
+    status: 'waiting',
+  },
+  {
+    id: 'DO-2837',
+    apartment: '301',
+    resident: 'Bruno Nogueira',
+    carrier: 'Jadlog',
+    arrivedAt: '12 jul, 14:25',
+    status: 'waiting',
+  },
+  {
+    id: 'DO-2836',
+    apartment: '1204',
+    resident: 'Marina Azevedo',
+    carrier: 'Correios',
+    arrivedAt: '11 jul, 11:04',
+    status: 'collected',
+    collectedAt: '11 jul, 19:22',
+  },
+];
