@@ -16,12 +16,16 @@ import {
   Menu,
   PackageCheck,
   PackagePlus,
+  Pencil,
   Plus,
   RefreshCw,
+  RotateCcw,
   Search,
   Settings,
   ShieldCheck,
+  Trash2,
   UserRound,
+  UserPlus,
   UsersRound,
   X,
 } from 'lucide-react';
@@ -76,6 +80,12 @@ type CondominiumSummary = {
   registration_code: string;
   city: string | null;
   state: string | null;
+  legal_name: string | null;
+  document_number: string | null;
+  address_line: string | null;
+  postal_code: string | null;
+  contact_name: string | null;
+  contact_email: string | null;
   status: 'active' | 'suspended' | 'archived';
   staff_limit: number;
   created_at: string;
@@ -85,6 +95,7 @@ type PlatformAdminView = 'overview' | 'condominiums' | 'administrators';
 
 type CondominiumAdministrator = {
   id: string;
+  condominium_id: string;
   invited_email: string | null;
   user_id: string | null;
   status: 'invited' | 'active' | 'inactive';
@@ -105,12 +116,19 @@ type CondominiumForm = {
   contactName: string;
   contactEmail: string;
   adminEmail: string;
+  staffLimit: string;
 };
 
 const emptyCondominiumForm: CondominiumForm = {
   name: '', legalName: '', documentNumber: '', addressLine: '', city: '', state: '',
-  postalCode: '', contactName: '', contactEmail: '', adminEmail: '',
+  postalCode: '', contactName: '', contactEmail: '', adminEmail: '', staffLimit: '10',
 };
+
+type AdminForm = { condominiumId: string; email: string };
+
+type ConfirmAction =
+  | { kind: 'archive-condominium'; id: string; label: string }
+  | { kind: 'deactivate-administrator'; id: string; label: string };
 
 function slugify(value: string) {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR')
@@ -125,6 +143,10 @@ function PlatformDashboard({ displayName, email, onSignOut }: { displayName: str
   const [loading, setLoading] = useState(true);
   const [administratorsLoading, setAdministratorsLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [editingCondominium, setEditingCondominium] = useState<CondominiumSummary | null>(null);
+  const [showAdminForm, setShowAdminForm] = useState(false);
+  const [adminForm, setAdminForm] = useState<AdminForm>({ condominiumId: '', email: '' });
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(emptyCondominiumForm);
   const [error, setError] = useState<string | null>(null);
@@ -133,7 +155,7 @@ function PlatformDashboard({ displayName, email, onSignOut }: { displayName: str
     if (!supabase) return;
     setLoading(true);
     const { data, error: loadError } = await supabase.from('condominiums')
-      .select('id,name,slug,registration_code,city,state,status,staff_limit,created_at')
+      .select('id,name,slug,registration_code,legal_name,document_number,address_line,city,state,postal_code,contact_name,contact_email,status,staff_limit,created_at')
       .order('created_at', { ascending: false });
     setLoading(false);
     if (loadError) setError(loadError.message);
@@ -144,7 +166,7 @@ function PlatformDashboard({ displayName, email, onSignOut }: { displayName: str
     if (!supabase) return;
     setAdministratorsLoading(true);
     const { data, error: loadError } = await supabase.from('staff_memberships')
-      .select('id,invited_email,user_id,status,is_owner,created_at,activated_at,condominiums(name,registration_code)')
+      .select('id,condominium_id,invited_email,user_id,status,is_owner,created_at,activated_at,condominiums(name,registration_code)')
       .eq('role', 'admin')
       .order('created_at', { ascending: false });
     setAdministratorsLoading(false);
@@ -192,6 +214,141 @@ function PlatformDashboard({ displayName, email, onSignOut }: { displayName: str
     await Promise.all([loadCondominiums(), loadAdministrators()]);
   }
 
+  function friendlyManagementError(message: string) {
+    if (message.includes('platform_admin_cannot_join_condominium')) return 'Este e-mail pertence à administração da plataforma e não pode ser vinculado a um condomínio.';
+    if (message.includes('invalid_admin_email')) return 'Informe um e-mail válido para o administrador.';
+    if (message.includes('staff_limit_reached')) return 'O novo limite é menor que a quantidade atual de usuários ativos.';
+    return message;
+  }
+
+  function openNewCondominium() {
+    setEditingCondominium(null);
+    setForm(emptyCondominiumForm);
+    setError(null);
+    setShowForm(true);
+  }
+
+  function openCondominiumEditor(item: CondominiumSummary) {
+    setEditingCondominium(item);
+    setForm({
+      name: item.name,
+      legalName: item.legal_name || '',
+      documentNumber: item.document_number || '',
+      addressLine: item.address_line || '',
+      city: item.city || '',
+      state: item.state || '',
+      postalCode: item.postal_code || '',
+      contactName: item.contact_name || '',
+      contactEmail: item.contact_email || '',
+      adminEmail: '',
+      staffLimit: String(item.staff_limit),
+    });
+    setError(null);
+    setShowForm(true);
+  }
+
+  async function updateCondominium(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !editingCondominium) return;
+    setSaving(true);
+    setError(null);
+    const { error: updateError } = await supabase.rpc('update_condominium', {
+      p_condominium_id: editingCondominium.id,
+      p_name: form.name.trim(),
+      p_legal_name: form.legalName.trim() || null,
+      p_document_number: form.documentNumber.trim() || null,
+      p_address_line: form.addressLine.trim() || null,
+      p_city: form.city.trim() || null,
+      p_state: form.state.trim().toLocaleUpperCase('pt-BR') || null,
+      p_postal_code: form.postalCode.trim() || null,
+      p_contact_name: form.contactName.trim() || null,
+      p_contact_email: form.contactEmail.trim() || null,
+      p_staff_limit: Number(form.staffLimit),
+    });
+    setSaving(false);
+    if (updateError) {
+      setError(friendlyManagementError(updateError.message));
+      return;
+    }
+    setShowForm(false);
+    setEditingCondominium(null);
+    await loadCondominiums();
+  }
+
+  async function setCondominiumStatus(id: string, status: CondominiumSummary['status']) {
+    if (!supabase) return;
+    setSaving(true);
+    setError(null);
+    const { error: statusError } = await supabase.rpc('set_condominium_status', {
+      p_condominium_id: id,
+      p_status: status,
+    });
+    setSaving(false);
+    if (statusError) setError(friendlyManagementError(statusError.message));
+    else await loadCondominiums();
+  }
+
+  function openAdministratorEditor(item?: CondominiumAdministrator) {
+    setAdminForm({
+      condominiumId: item?.condominium_id || condominiums.find((condominium) => condominium.status !== 'archived')?.id || '',
+      email: item?.invited_email || '',
+    });
+    setError(null);
+    setShowAdminForm(true);
+  }
+
+  async function assignAdministrator(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase) return;
+    if (adminForm.email.trim().toLocaleLowerCase('pt-BR') === email.toLocaleLowerCase('pt-BR')) {
+      setError('O administrador da plataforma não pode ser administrador de um condomínio. Informe outro e-mail.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    const { error: assignError } = await supabase.rpc('assign_condominium_admin', {
+      p_condominium_id: adminForm.condominiumId,
+      p_email: adminForm.email.trim(),
+    });
+    setSaving(false);
+    if (assignError) {
+      setError(friendlyManagementError(assignError.message));
+      return;
+    }
+    setShowAdminForm(false);
+    await loadAdministrators();
+  }
+
+  async function reactivateAdministrator(item: CondominiumAdministrator) {
+    if (!supabase || !item.invited_email) return;
+    setSaving(true);
+    setError(null);
+    const { error: reactivateError } = await supabase.rpc('assign_condominium_admin', {
+      p_condominium_id: item.condominium_id,
+      p_email: item.invited_email,
+    });
+    setSaving(false);
+    if (reactivateError) setError(friendlyManagementError(reactivateError.message));
+    else await loadAdministrators();
+  }
+
+  async function executeConfirmedAction() {
+    if (!supabase || !confirmAction) return;
+    setSaving(true);
+    setError(null);
+    const action = confirmAction;
+    const { error: actionError } = action.kind === 'archive-condominium'
+      ? await supabase.rpc('set_condominium_status', { p_condominium_id: action.id, p_status: 'archived' })
+      : await supabase.rpc('deactivate_condominium_admin', { p_membership_id: action.id });
+    setSaving(false);
+    setConfirmAction(null);
+    if (actionError) {
+      setError(friendlyManagementError(actionError.message));
+      return;
+    }
+    await Promise.all([loadCondominiums(), loadAdministrators()]);
+  }
+
   const viewCopy = {
     overview: { eyebrow: 'DOMUS ONE · CONTROLE CENTRAL', title: 'Administração da plataforma', description: 'Acompanhe a operação geral e mantenha cada condomínio com sua própria equipe.' },
     condominiums: { eyebrow: 'GESTÃO DE OPERAÇÕES', title: 'Condomínios', description: 'Consulte ambientes, códigos de cadastro, limites e situação operacional.' },
@@ -207,7 +364,7 @@ function PlatformDashboard({ displayName, email, onSignOut }: { displayName: str
         <div className="operator-card"><span className="avatar">{userInitials(displayName)}</span><span><strong>{displayName}</strong><small>{email}</small></span><button className="operator-card__logout" onClick={onSignOut} type="button" aria-label="Sair"><LogOut size={16} /></button></div>
       </aside>
       <main className="platform-main">
-        <header><div><span className="eyebrow">{viewCopy.eyebrow}</span><h1>{viewCopy.title}</h1><p>{viewCopy.description}</p></div>{platformView !== 'administrators' && <button className="button button--primary button--large" onClick={() => { setError(null); setShowForm(true); }} type="button"><Plus size={18} />Novo condomínio</button>}</header>
+        <header><div><span className="eyebrow">{viewCopy.eyebrow}</span><h1>{viewCopy.title}</h1><p>{viewCopy.description}</p></div>{platformView !== 'administrators' ? <button className="button button--primary button--large" onClick={openNewCondominium} type="button"><Plus size={18} />Novo condomínio</button> : <button className="button button--primary button--large" onClick={() => openAdministratorEditor()} type="button"><UserPlus size={18} />Vincular administrador</button>}</header>
         {platformView === 'overview' && <section className="platform-metrics">
           <article><Building2 size={20} /><div><strong>{condominiums.length}</strong><span>Condomínios cadastrados</span></div></article>
           <article><ShieldCheck size={20} /><div><strong>{condominiums.filter((item) => item.status === 'active').length}</strong><span>Operações ativas</span></div></article>
@@ -218,8 +375,8 @@ function PlatformDashboard({ displayName, email, onSignOut }: { displayName: str
           {error && <div className="auth-message auth-message--error">{error}</div>}
           {loading ? <div className="platform-loading"><LoaderCircle className="spin" size={22} />Carregando condomínios…</div> : (
             <div className="platform-table">
-              <div className="platform-table__head"><span>CONDOMÍNIO</span><span>LOCALIZAÇÃO</span><span>CÓDIGO</span><span>LIMITE</span><span>STATUS</span></div>
-              {condominiums.map((item) => <article key={item.id}><div><span className="condominium-icon"><Building2 size={18} /></span><span><strong>{item.name}</strong><small>{item.slug}</small></span></div><span>{[item.city, item.state].filter(Boolean).join(' · ') || 'Não informado'}</span><code>{item.registration_code}</code><span>{item.staff_limit} usuários</span><em className={`condominium-status condominium-status--${item.status}`}>{item.status === 'active' ? 'Ativo' : item.status === 'suspended' ? 'Suspenso' : 'Arquivado'}</em></article>)}
+              <div className="platform-table__head"><span>CONDOMÍNIO</span><span>LOCALIZAÇÃO</span><span>CÓDIGO</span><span>LIMITE</span><span>STATUS</span><span>AÇÕES</span></div>
+              {condominiums.map((item) => <article key={item.id}><div><span className="condominium-icon"><Building2 size={18} /></span><span><strong>{item.name}</strong><small>{item.slug}</small></span></div><span>{[item.city, item.state].filter(Boolean).join(' · ') || 'Não informado'}</span><code>{item.registration_code}</code><span>{item.staff_limit} usuários</span><em className={`condominium-status condominium-status--${item.status}`}>{item.status === 'active' ? 'Ativo' : item.status === 'suspended' ? 'Suspenso' : 'Arquivado'}</em><span className="platform-row-actions"><button onClick={() => openCondominiumEditor(item)} type="button" aria-label={`Editar ${item.name}`} title="Editar condomínio"><Pencil size={15} /></button>{item.status === 'archived' ? <button onClick={() => void setCondominiumStatus(item.id, 'active')} type="button" aria-label={`Reativar ${item.name}`} title="Reativar condomínio"><RotateCcw size={15} /></button> : <button className="danger" onClick={() => setConfirmAction({ kind: 'archive-condominium', id: item.id, label: item.name })} type="button" aria-label={`Arquivar ${item.name}`} title="Arquivar condomínio"><Trash2 size={15} /></button>}</span></article>)}
               {condominiums.length === 0 && <div className="platform-empty"><Building2 size={28} /><strong>Nenhum condomínio cadastrado</strong><span>Crie a primeira operação para começar.</span></div>}
             </div>
           )}
@@ -227,13 +384,28 @@ function PlatformDashboard({ displayName, email, onSignOut }: { displayName: str
           <header><div><h2>Administradores de condomínio</h2><p>O administrador da plataforma não aparece nesta lista e não pode ocupar este perfil.</p></div><button className="icon-button" onClick={() => void loadAdministrators()} type="button" aria-label="Atualizar administradores"><RefreshCw size={17} /></button></header>
           {error && <div className="auth-message auth-message--error">{error}</div>}
           {administratorsLoading ? <div className="platform-loading"><LoaderCircle className="spin" size={22} />Carregando administradores…</div> : <div className="platform-admin-table">
-            <div className="platform-admin-table__head"><span>ADMINISTRADOR</span><span>CONDOMÍNIO</span><span>PERFIL</span><span>STATUS</span></div>
-            {administrators.map((item) => <article key={item.id}><div><span className="administrator-avatar">{userInitials(item.invited_email || 'Administrador')}</span><span><strong>{item.invited_email || 'E-mail não informado'}</strong><small>{item.user_id ? 'Conta vinculada' : 'Aguardando ativação'}</small></span></div><span><strong>{item.condominiums?.name || 'Condomínio indisponível'}</strong><small>{item.condominiums?.registration_code || '—'}</small></span><span>{item.is_owner ? 'Principal' : 'Administrador'}</span><em className={`membership-status membership-status--${item.status}`}>{item.status === 'active' ? 'Ativo' : item.status === 'invited' ? 'Convidado' : 'Inativo'}</em></article>)}
+            <div className="platform-admin-table__head"><span>ADMINISTRADOR</span><span>CONDOMÍNIO</span><span>PERFIL</span><span>STATUS</span><span>AÇÕES</span></div>
+            {administrators.map((item) => <article key={item.id}><div><span className="administrator-avatar">{userInitials(item.invited_email || 'Administrador')}</span><span><strong>{item.invited_email || 'E-mail não informado'}</strong><small>{item.user_id ? 'Conta vinculada' : 'Aguardando ativação'}</small></span></div><span><strong>{item.condominiums?.name || 'Condomínio indisponível'}</strong><small>{item.condominiums?.registration_code || '—'}</small></span><span>{item.is_owner ? 'Principal' : 'Administrador'}</span><em className={`membership-status membership-status--${item.status}`}>{item.status === 'active' ? 'Ativo' : item.status === 'invited' ? 'Convidado' : 'Inativo'}</em><span className="platform-row-actions"><button onClick={() => openAdministratorEditor(item)} type="button" aria-label={`Editar ${item.invited_email || 'administrador'}`} title="Substituir administrador"><Pencil size={15} /></button>{item.status === 'inactive' ? <button onClick={() => void reactivateAdministrator(item)} type="button" aria-label={`Reativar ${item.invited_email || 'administrador'}`} title="Reativar administrador"><RotateCcw size={15} /></button> : <button className="danger" onClick={() => setConfirmAction({ kind: 'deactivate-administrator', id: item.id, label: item.invited_email || 'este administrador' })} type="button" aria-label={`Desativar ${item.invited_email || 'administrador'}`} title="Desativar administrador"><Trash2 size={15} /></button>}</span></article>)}
             {administrators.length === 0 && <div className="platform-empty"><UsersRound size={28} /><strong>Nenhum administrador cadastrado</strong><span>Um administrador será criado junto com o próximo condomínio.</span></div>}
           </div>}
         </section>}
       </main>
-      {showForm && <div className="panel-layer resident-modal-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowForm(false)}><section className="platform-form-modal" role="dialog" aria-modal="true" aria-labelledby="condominium-form-title"><header><div><span className="eyebrow">NOVA OPERAÇÃO</span><h2 id="condominium-form-title">Cadastrar condomínio</h2><p>O administrador receberá um convite vinculado somente a este condomínio.</p></div><button className="icon-button" onClick={() => setShowForm(false)} type="button" aria-label="Fechar"><X size={20} /></button></header><form onSubmit={createCondominium}><div className="platform-form-grid"><label className="field-wide">Nome do condomínio<input required value={form.name} onChange={(event) => updateForm('name', event.target.value)} placeholder="Ex.: I9 Horto" /></label><label>Razão social<input value={form.legalName} onChange={(event) => updateForm('legalName', event.target.value)} /></label><label>CNPJ / documento<input value={form.documentNumber} onChange={(event) => updateForm('documentNumber', event.target.value)} /></label><label className="field-wide">Endereço<input value={form.addressLine} onChange={(event) => updateForm('addressLine', event.target.value)} /></label><label>Cidade<input value={form.city} onChange={(event) => updateForm('city', event.target.value)} /></label><label>Estado<input maxLength={2} value={form.state} onChange={(event) => updateForm('state', event.target.value)} placeholder="SP" /></label><label>CEP<input value={form.postalCode} onChange={(event) => updateForm('postalCode', event.target.value)} /></label><label>Contato no condomínio<input value={form.contactName} onChange={(event) => updateForm('contactName', event.target.value)} /></label><label>E-mail de contato<input type="email" value={form.contactEmail} onChange={(event) => updateForm('contactEmail', event.target.value)} /></label><label className="field-wide invite-field"><Mail size={18} /><span>Administrador do condomínio<small>Este e-mail receberá o perfil de administrador principal.</small></span><input required type="email" value={form.adminEmail} onChange={(event) => updateForm('adminEmail', event.target.value)} placeholder="administrador@condominio.com.br" /></label></div>{error && <div className="auth-message auth-message--error">{error}</div>}<footer><button className="button button--ghost" onClick={() => setShowForm(false)} type="button">Cancelar</button><button className="button button--primary" disabled={saving} type="submit">{saving ? <LoaderCircle className="spin" size={18} /> : <Plus size={18} />}{saving ? 'Criando…' : 'Criar condomínio e convite'}</button></footer></form></section></div>}
+      {showForm && <div className="panel-layer resident-modal-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowForm(false)}>
+        <section className="platform-form-modal" role="dialog" aria-modal="true" aria-labelledby="condominium-form-title">
+          <header><div><span className="eyebrow">{editingCondominium ? 'CONFIGURAÇÃO DA OPERAÇÃO' : 'NOVA OPERAÇÃO'}</span><h2 id="condominium-form-title">{editingCondominium ? 'Editar condomínio' : 'Cadastrar condomínio'}</h2><p>{editingCondominium ? 'Atualize os dados institucionais e o limite da equipe.' : 'O administrador receberá um convite vinculado somente a este condomínio.'}</p></div><button className="icon-button" onClick={() => setShowForm(false)} type="button" aria-label="Fechar"><X size={20} /></button></header>
+          <form onSubmit={editingCondominium ? updateCondominium : createCondominium}><div className="platform-form-grid">
+            <label className="field-wide">Nome do condomínio<input required value={form.name} onChange={(event) => updateForm('name', event.target.value)} placeholder="Ex.: I9 Horto" /></label>
+            <label>Razão social<input value={form.legalName} onChange={(event) => updateForm('legalName', event.target.value)} /></label><label>CNPJ / documento<input value={form.documentNumber} onChange={(event) => updateForm('documentNumber', event.target.value)} /></label>
+            <label className="field-wide">Endereço<input value={form.addressLine} onChange={(event) => updateForm('addressLine', event.target.value)} /></label><label>Cidade<input value={form.city} onChange={(event) => updateForm('city', event.target.value)} /></label><label>Estado<input maxLength={2} value={form.state} onChange={(event) => updateForm('state', event.target.value)} placeholder="SP" /></label>
+            <label>CEP<input value={form.postalCode} onChange={(event) => updateForm('postalCode', event.target.value)} /></label><label>Contato no condomínio<input value={form.contactName} onChange={(event) => updateForm('contactName', event.target.value)} /></label><label>E-mail de contato<input type="email" value={form.contactEmail} onChange={(event) => updateForm('contactEmail', event.target.value)} /></label>
+            {editingCondominium ? <label>Limite de porteiros<input min="1" max="10" required type="number" value={form.staffLimit} onChange={(event) => updateForm('staffLimit', event.target.value)} /></label> : <label className="field-wide invite-field"><Mail size={18} /><span>Administrador do condomínio<small>Este e-mail receberá o perfil de administrador principal.</small></span><input required type="email" value={form.adminEmail} onChange={(event) => updateForm('adminEmail', event.target.value)} placeholder="administrador@condominio.com.br" /></label>}
+          </div>{error && <div className="auth-message auth-message--error">{error}</div>}<footer><button className="button button--ghost" onClick={() => setShowForm(false)} type="button">Cancelar</button><button className="button button--primary" disabled={saving} type="submit">{saving ? <LoaderCircle className="spin" size={18} /> : editingCondominium ? <Check size={18} /> : <Plus size={18} />}{saving ? 'Salvando…' : editingCondominium ? 'Salvar alterações' : 'Criar condomínio e convite'}</button></footer></form>
+        </section>
+      </div>}
+      {showAdminForm && <div className="panel-layer resident-modal-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowAdminForm(false)}>
+        <section className="platform-form-modal platform-form-modal--compact" role="dialog" aria-modal="true" aria-labelledby="administrator-form-title"><header><div><span className="eyebrow">GESTÃO DE ACESSO</span><h2 id="administrator-form-title">Vincular administrador</h2><p>O novo vínculo substitui o administrador atual do condomínio sem apagar o histórico.</p></div><button className="icon-button" onClick={() => setShowAdminForm(false)} type="button" aria-label="Fechar"><X size={20} /></button></header><form onSubmit={assignAdministrator}><div className="platform-form-grid"><label className="field-wide">Condomínio<select required value={adminForm.condominiumId} onChange={(event) => setAdminForm((current) => ({ ...current, condominiumId: event.target.value }))}><option value="">Selecione um condomínio</option>{condominiums.filter((item) => item.status !== 'archived').map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label className="field-wide">E-mail do administrador<input required type="email" value={adminForm.email} onChange={(event) => setAdminForm((current) => ({ ...current, email: event.target.value }))} placeholder="administrador@condominio.com.br" /></label></div>{error && <div className="auth-message auth-message--error">{error}</div>}<footer><button className="button button--ghost" onClick={() => setShowAdminForm(false)} type="button">Cancelar</button><button className="button button--primary" disabled={saving || !adminForm.condominiumId} type="submit">{saving ? <LoaderCircle className="spin" size={18} /> : <UserPlus size={18} />}{saving ? 'Vinculando…' : 'Vincular administrador'}</button></footer></form></section>
+      </div>}
+      {confirmAction && <div className="panel-layer resident-modal-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setConfirmAction(null)}><section className="platform-confirm-modal" role="alertdialog" aria-modal="true"><span className="platform-confirm-modal__icon"><Trash2 size={20} /></span><h2>{confirmAction.kind === 'archive-condominium' ? 'Arquivar condomínio?' : 'Desativar administrador?'}</h2><p>{confirmAction.kind === 'archive-condominium' ? `O condomínio ${confirmAction.label} deixará de aparecer como operação ativa, mas todo o histórico será preservado.` : `${confirmAction.label} perderá o acesso ao condomínio. O vínculo continuará no histórico e poderá ser reativado.`}</p><footer><button className="button button--ghost" onClick={() => setConfirmAction(null)} type="button">Cancelar</button><button className="button button--danger" disabled={saving} onClick={() => void executeConfirmedAction()} type="button">{saving ? <LoaderCircle className="spin" size={18} /> : <Trash2 size={18} />}{confirmAction.kind === 'archive-condominium' ? 'Arquivar' : 'Desativar'}</button></footer></section></div>}
     </div>
   );
 }
