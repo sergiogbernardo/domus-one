@@ -52,6 +52,14 @@ type OperationalCondominium = {
   name: string;
   registrationCode: string;
   staffLimit: number;
+  legalName: string | null;
+  documentNumber: string | null;
+  addressLine: string | null;
+  city: string | null;
+  state: string | null;
+  postalCode: string | null;
+  contactName: string | null;
+  contactEmail: string | null;
 };
 
 type OperationalUnit = {
@@ -548,7 +556,7 @@ type AccessContext =
   | { kind: 'resident'; condominiumId: string; unitId: string }
   | { kind: 'none' };
 
-type OperationalSection = 'dashboard' | 'units' | 'people';
+type OperationalSection = 'dashboard' | 'history' | 'units' | 'people' | 'settings';
 
 function Sidebar({ collapsed, activeSection, onNavigate, onToggle, onResidentView, condominiumName, waitingCount, displayName, email, onSignOut }: { collapsed: boolean; activeSection: OperationalSection; onNavigate: (section: OperationalSection) => void; onToggle: () => void; onResidentView: () => void; condominiumName: string; waitingCount: number; displayName: string; email: string; onSignOut: () => void }) {
   return (
@@ -562,11 +570,11 @@ function Sidebar({ collapsed, activeSection, onNavigate, onToggle, onResidentVie
         <p>OPERAÇÃO</p>
         <a className={`nav-link ${activeSection === 'dashboard' ? 'nav-link--active' : ''}`} href="#painel" onClick={() => onNavigate('dashboard')}><LayoutDashboard size={19} />Painel</a>
         <a className="nav-link" href="#encomendas" onClick={() => onNavigate('dashboard')}><Boxes size={19} />Encomendas{waitingCount > 0 && <span>{waitingCount}</span>}</a>
-        <a className="nav-link" href="#historico"><Archive size={19} />Histórico</a>
+        <a className={`nav-link ${activeSection === 'history' ? 'nav-link--active' : ''}`} href="#historico" onClick={() => onNavigate('history')}><Archive size={19} />Histórico</a>
         <p>GESTÃO</p>
         <a className={`nav-link ${activeSection === 'units' ? 'nav-link--active' : ''}`} href="#unidades" onClick={() => onNavigate('units')}><Building2 size={19} />Unidades</a>
         <a className={`nav-link ${activeSection === 'people' ? 'nav-link--active' : ''}`} href="#pessoas" onClick={() => onNavigate('people')}><UsersRound size={19} />Pessoas</a>
-        <a className="nav-link" href="#configuracoes"><Settings size={19} />Configurações</a>
+        <a className={`nav-link ${activeSection === 'settings' ? 'nav-link--active' : ''}`} href="#configuracoes" onClick={() => onNavigate('settings')}><Settings size={19} />Configurações</a>
       </nav>
       <button className="resident-preview" onClick={onResidentView} type="button">
         <UserRound size={18} />
@@ -732,16 +740,40 @@ function PeopleManagement({ condominium, units, staffLimit, staff, residents, ca
   </section>;
 }
 
+function PackageDetails({ item, onClose }: { item: PackageRecord; onClose: () => void }) {
+  return <div className="panel-layer resident-modal-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="detail-modal" role="dialog" aria-modal="true" aria-labelledby="package-detail-title"><header><div><span className="eyebrow">REGISTRO DA PORTARIA</span><h2 id="package-detail-title">Detalhes da encomenda</h2></div><button className="icon-button" onClick={onClose} type="button" aria-label="Fechar"><X size={20} /></button></header><Status status={item.status} /><dl><div><dt>Código</dt><dd>{item.id}</dd></div><div><dt>Unidade</dt><dd>{item.building} · {item.apartment}</dd></div><div><dt>Destinatário</dt><dd>{item.resident}</dd></div><div><dt>Transportadora</dt><dd>{item.carrier}</dd></div><div><dt>Recebimento</dt><dd>{item.arrivedAt}</dd></div>{item.collectedAt && <div><dt>Retirada</dt><dd>{item.collectedAt}</dd></div>}<div><dt>Observação</dt><dd>{item.note || 'Sem observações'}</dd></div></dl><button className="button button--outline button--full" onClick={onClose} type="button">Fechar ficha</button></section></div>;
+}
+
+function NotificationsPanel({ packages, onClose, onOpen }: { packages: PackageRecord[]; onClose: () => void; onOpen: (item: PackageRecord) => void }) {
+  const waiting = packages.filter((item) => item.status === 'waiting').slice(0, 8);
+  return <div className="panel-layer resident-modal-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="notification-panel" role="dialog" aria-modal="true" aria-labelledby="notifications-title"><header><div><span className="eyebrow">ATUALIZAÇÕES</span><h2 id="notifications-title">Notificações</h2><p>{waiting.length ? `${waiting.length} retirada${waiting.length === 1 ? '' : 's'} aguardando atenção.` : 'Não há pendências no momento.'}</p></div><button className="icon-button" onClick={onClose} type="button" aria-label="Fechar"><X size={20} /></button></header>{waiting.length ? <div className="notification-list">{waiting.map((item) => <button key={item.id} onClick={() => onOpen(item)} type="button"><span className="carrier-mark">{item.carrier.slice(0, 1)}</span><span><strong>{item.building} · {item.apartment}</strong><small>{item.carrier} · {item.arrivedAt}</small></span><span>→</span></button>)}</div> : <div className="empty-state"><Check size={25} /><strong>Portaria em dia</strong><span>Novas encomendas aparecerão aqui.</span></div>}</section></div>;
+}
+
+function OperationalHistory({ condominium, packages, onOpen }: { condominium: OperationalCondominium; packages: PackageRecord[]; onOpen: (item: PackageRecord) => void }) {
+  const [query, setQuery] = useState('');
+  const collected = useMemo(() => packages.filter((item) => item.status === 'collected' && [item.id, item.apartment, item.building, item.resident, item.carrier].some((value) => value.toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR')))), [packages, query]);
+  return <section className="history-page"><header className="page-heading"><div><span className="eyebrow">OPERAÇÃO · RASTREABILIDADE</span><h1>Histórico de retiradas</h1><p>Consulte as encomendas retiradas no {condominium.name}.</p></div></header><section className="package-section"><header><div><h2>Retiradas confirmadas</h2><p>{collected.length} registro{collected.length === 1 ? '' : 's'} localizado{collected.length === 1 ? '' : 's'}</p></div></header><div className="package-toolbar"><label className="search-field"><Search size={18} /><span className="sr-only">Buscar histórico</span><input placeholder="Buscar unidade, destinatário ou código" value={query} onChange={(event) => setQuery(event.target.value)} /></label></div><div className="package-table"><div className="package-table__head"><span>UNIDADE</span><span>DESTINATÁRIO</span><span>TRANSPORTADORA</span><span>RETIRADA</span><span>STATUS</span><span /></div>{collected.map((item) => <div className="package-row" key={item.id}><div className="unit-cell"><span>{item.apartment}</span><small>{item.building}</small></div><div><strong>{item.resident}</strong><small>{item.id}</small></div><div><span>{item.carrier}</span><small>{item.note || 'Sem observações'}</small></div><div><span>{item.collectedAt}</span><small>Confirmada pelo morador</small></div><div><Status status={item.status} /></div><button className="row-action" onClick={() => onOpen(item)} type="button" aria-label={`Abrir encomenda ${item.id}`}><ChevronDown size={17} /></button></div>)}{collected.length === 0 && <div className="empty-state"><Archive size={25} /><strong>Nenhuma retirada encontrada</strong><span>{packages.length ? 'Altere a busca ou aguarde a primeira confirmação.' : 'O histórico será criado a partir das retiradas confirmadas.'}</span></div>}</div></section></section>;
+}
+
+function CondominiumSettings({ condominium, buildings, units, staff, residents, canManage }: { condominium: OperationalCondominium; buildings: OperationalBuilding[]; units: OperationalUnit[]; staff: StaffPerson[]; residents: ResidentPerson[]; canManage: boolean }) {
+  return <section className="settings-page"><header className="page-heading"><div><span className="eyebrow">GESTÃO · CONFIGURAÇÕES</span><h1>Condomínio</h1><p>Dados oficiais da operação cadastrados na plataforma.</p></div></header><div className="settings-grid"><section className="settings-card"><header><Building2 size={20} /><div><h2>Identificação</h2><p>Informações institucionais</p></div></header><dl><div><dt>Nome</dt><dd>{condominium.name}</dd></div><div><dt>Código</dt><dd>{condominium.registrationCode}</dd></div><div><dt>Razão social</dt><dd>{condominium.legalName || 'Não informada'}</dd></div><div><dt>CNPJ / documento</dt><dd>{condominium.documentNumber || 'Não informado'}</dd></div></dl></section><section className="settings-card"><header><Settings size={20} /><div><h2>Estrutura e acessos</h2><p>Capacidade atual da operação</p></div></header><dl><div><dt>Blocos</dt><dd>{buildings.length}</dd></div><div><dt>Unidades ativas</dt><dd>{units.length}</dd></div><div><dt>Usuários da portaria</dt><dd>{staff.filter((item) => item.role === 'doorman' && item.status !== 'inactive').length} de {condominium.staffLimit}</dd></div><div><dt>Moradores vinculados</dt><dd>{residents.filter((item) => item.status === 'active').length}</dd></div></dl></section><section className="settings-card"><header><UserRound size={20} /><div><h2>Contato</h2><p>Referência administrativa</p></div></header><dl><div><dt>Responsável</dt><dd>{condominium.contactName || 'Não informado'}</dd></div><div><dt>E-mail</dt><dd>{condominium.contactEmail || 'Não informado'}</dd></div><div><dt>Endereço</dt><dd>{condominium.addressLine || 'Não informado'}</dd></div><div><dt>Cidade / UF</dt><dd>{[condominium.city, condominium.state].filter(Boolean).join(' / ') || 'Não informado'}</dd></div><div><dt>CEP</dt><dd>{condominium.postalCode || 'Não informado'}</dd></div></dl></section></div>{canManage && <div className="operational-notice"><ShieldCheck size={18} /><span><strong>Dados protegidos.</strong> Alterações cadastrais do condomínio são realizadas pelo administrador da plataforma; blocos, unidades e acessos continuam sob sua gestão.</span></div>}</section>;
+}
+
 function DoormanDashboard({ condominium, buildings, units, packages, staff, residents, staffLimit, canManage, onCreateBuilding, onCreateUnit, onInvitePerson, onStaffStatus, onResidentStatus, onNewPackage, onResidentView, displayName, email, onSignOut }: { condominium: OperationalCondominium; buildings: OperationalBuilding[]; units: OperationalUnit[]; packages: PackageRecord[]; staff: StaffPerson[]; residents: ResidentPerson[]; staffLimit: number; canManage: boolean; onCreateBuilding: (name: string, code: string, floors: string) => Promise<CreateResult>; onCreateUnit: (buildingId: string, unitNumber: string, floorLabel: string) => Promise<CreateResult>; onInvitePerson: (role: 'doorman' | 'resident', email: string, fullName?: string, unitId?: string) => Promise<CreateResult>; onStaffStatus: (id: string, active: boolean) => Promise<CreateResult>; onResidentStatus: (person: ResidentPerson, action: 'approve' | 'deactivate' | 'reactivate') => Promise<CreateResult>; onNewPackage: () => void; onResidentView: () => void; displayName: string; email: string; onSignOut: () => void }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [section, setSection] = useState<OperationalSection>(() => window.location.hash === '#unidades' ? 'units' : window.location.hash === '#pessoas' ? 'people' : 'dashboard');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [section, setSection] = useState<OperationalSection>(() => window.location.hash === '#unidades' ? 'units' : window.location.hash === '#pessoas' ? 'people' : window.location.hash === '#historico' ? 'history' : window.location.hash === '#configuracoes' ? 'settings' : 'dashboard');
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'waiting' | 'all'>('waiting');
+  const [buildingFilter, setBuildingFilter] = useState('all');
+  const [selectedPackage, setSelectedPackage] = useState<PackageRecord | null>(null);
+  const [showNotifications, setShowNotifications] = useState(false);
   const visiblePackages = useMemo(() => packages.filter((item) => {
     const matchesFilter = filter === 'all' || item.status === 'waiting';
+    const matchesBuilding = buildingFilter === 'all' || item.building === buildingFilter;
     const normalized = query.trim().toLocaleLowerCase('pt-BR');
-    return matchesFilter && (!normalized || [item.apartment, item.resident, item.carrier, item.id].some((value) => value.toLocaleLowerCase('pt-BR').includes(normalized)));
-  }), [filter, packages, query]);
+    return matchesFilter && matchesBuilding && (!normalized || [item.apartment, item.resident, item.carrier, item.id].some((value) => value.toLocaleLowerCase('pt-BR').includes(normalized)));
+  }), [buildingFilter, filter, packages, query]);
   const todayStart = startOfTodayIso();
   const waitingCount = packages.filter((item) => item.status === 'waiting').length;
   const receivedToday = packages.filter((item) => item.receivedAt >= todayStart).length;
@@ -749,17 +781,18 @@ function DoormanDashboard({ condominium, buildings, units, packages, staff, resi
   const currentDate = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' }).format(new Date());
 
   return (
-    <div className={`app-shell ${sidebarCollapsed ? 'app-shell--collapsed' : ''}`}>
-      <Sidebar collapsed={sidebarCollapsed} activeSection={section} onNavigate={setSection} onToggle={() => setSidebarCollapsed((current) => !current)} onResidentView={onResidentView} condominiumName={condominium.name} waitingCount={waitingCount} displayName={displayName} email={email} onSignOut={onSignOut} />
+    <div className={`app-shell ${sidebarCollapsed ? 'app-shell--collapsed' : ''} ${mobileMenuOpen ? 'app-shell--mobile-open' : ''}`}>
+      {mobileMenuOpen && <button className="mobile-menu-backdrop" onClick={() => setMobileMenuOpen(false)} type="button" aria-label="Fechar menu" />}
+      <Sidebar collapsed={sidebarCollapsed} activeSection={section} onNavigate={(next) => { setSection(next); setMobileMenuOpen(false); }} onToggle={() => setSidebarCollapsed((current) => !current)} onResidentView={onResidentView} condominiumName={condominium.name} waitingCount={waitingCount} displayName={displayName} email={email} onSignOut={onSignOut} />
       <main className="dashboard" id="painel">
         <header className="topbar">
-          <button className="mobile-menu" type="button" aria-label="Abrir menu"><Menu /></button>
+          <button className="mobile-menu" onClick={() => setMobileMenuOpen(true)} type="button" aria-label="Abrir menu"><Menu /></button>
           <Brand compact />
           <span className="topbar__date">{currentDate}</span>
-          <div className="topbar__actions"><button className="icon-button notification" aria-label="Notificações"><Bell size={20} /><i /></button><button className="mobile-avatar" type="button">{userInitials(displayName)}</button></div>
+          <div className="topbar__actions"><button className="icon-button notification" onClick={() => setShowNotifications(true)} type="button" aria-label={`Notificações${waitingCount ? `, ${waitingCount} pendentes` : ''}`}><Bell size={20} />{waitingCount > 0 && <i />}</button><button className="mobile-avatar" onClick={() => setSection('settings')} type="button" aria-label="Abrir configurações">{userInitials(displayName)}</button></div>
         </header>
         <div className="dashboard__content">
-          {section === 'units' ? <UnitsManagement condominium={condominium} buildings={buildings} units={units} canManage={canManage} onCreateBuilding={onCreateBuilding} onCreateUnit={onCreateUnit} /> : section === 'people' ? <PeopleManagement condominium={condominium} units={units} staffLimit={staffLimit} staff={staff} residents={residents} canManage={canManage} onInvite={onInvitePerson} onStaffStatus={onStaffStatus} onResidentStatus={onResidentStatus} /> : <>
+          {section === 'units' ? <UnitsManagement condominium={condominium} buildings={buildings} units={units} canManage={canManage} onCreateBuilding={onCreateBuilding} onCreateUnit={onCreateUnit} /> : section === 'people' ? <PeopleManagement condominium={condominium} units={units} staffLimit={staffLimit} staff={staff} residents={residents} canManage={canManage} onInvite={onInvitePerson} onStaffStatus={onStaffStatus} onResidentStatus={onResidentStatus} /> : section === 'history' ? <OperationalHistory condominium={condominium} packages={packages} onOpen={setSelectedPackage} /> : section === 'settings' ? <CondominiumSettings condominium={condominium} buildings={buildings} units={units} staff={staff} residents={residents} canManage={canManage} /> : <>
           <section className="page-heading">
             <div><span className="eyebrow">PORTARIA · OPERAÇÃO ATIVA</span><h1>Olá, {displayName.split(' ')[0]}.</h1><p>Acompanhe o que chegou e mantenha a portaria em ordem.</p></div>
             <button className="button button--primary button--large" disabled={units.length === 0} onClick={onNewPackage} title={units.length === 0 ? 'Cadastre uma unidade antes de receber encomendas' : undefined} type="button"><PackagePlus size={19} />Nova encomenda</button>
@@ -778,7 +811,7 @@ function DoormanDashboard({ condominium, buildings, units, packages, staff, resi
             </header>
             <div className="package-toolbar">
               <label className="search-field"><Search size={18} /><span className="sr-only">Buscar encomenda</span><input placeholder="Buscar apartamento, morador ou código" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
-              <button className="button button--outline" type="button"><Building2 size={17} />Todos os blocos<ChevronDown size={16} /></button>
+              <label className="building-filter"><Building2 size={17} /><span className="sr-only">Filtrar por bloco</span><select value={buildingFilter} onChange={(event) => setBuildingFilter(event.target.value)}><option value="all">Todos os blocos</option>{buildings.map((building) => <option key={building.id} value={building.name}>{building.name}</option>)}</select><ChevronDown size={16} /></label>
             </div>
             <div className="package-table" role="table" aria-label="Encomendas recentes">
               <div className="package-table__head" role="row"><span>UNIDADE</span><span>DESTINATÁRIO</span><span>TRANSPORTADORA</span><span>CHEGADA</span><span>STATUS</span><span /></div>
@@ -786,25 +819,28 @@ function DoormanDashboard({ condominium, buildings, units, packages, staff, resi
                 <div className="package-row" role="row" key={item.id}>
                   <div className="unit-cell"><span>{item.apartment}</span><small>{item.building}</small></div>
                   <div><strong>{item.resident}</strong><small>{item.id}</small></div>
-                  <div><span>{item.carrier}</span><small>{item.note ?? 'Volume padrão'}</small></div>
+                  <div><span>{item.carrier}</span><small>{item.note || 'Sem observações'}</small></div>
                   <div><span>{item.arrivedAt}</span><small>Registrada na portaria</small></div>
                   <div><Status status={item.status} /></div>
-                  <button className="row-action" type="button" aria-label={`Abrir encomenda ${item.id}`}><ChevronDown size={17} /></button>
+                  <button className="row-action" onClick={() => setSelectedPackage(item)} type="button" aria-label={`Abrir encomenda ${item.id}`}><ChevronDown size={17} /></button>
                 </div>
               ))}
               {visiblePackages.length === 0 && <div className="empty-state">{packages.length === 0 ? <Boxes size={24} /> : <Search size={24} />}<strong>{packages.length === 0 ? 'Nenhuma encomenda registrada' : 'Nenhuma encomenda encontrada'}</strong><span>{packages.length === 0 ? `Os registros do ${condominium.name} aparecerão aqui.` : 'Tente buscar por outra unidade ou nome.'}</span></div>}
             </div>
-            <footer className="table-footer"><span>Mostrando {visiblePackages.length} registros</span><button type="button">Ver todas as encomendas <span>→</span></button></footer>
+            <footer className="table-footer"><span>Mostrando {visiblePackages.length} registros</span><button onClick={() => { setFilter('all'); setBuildingFilter('all'); setQuery(''); }} type="button">Ver todas as encomendas <span>→</span></button></footer>
           </section>
           </>}
         </div>
       </main>
+      {selectedPackage && <PackageDetails item={selectedPackage} onClose={() => setSelectedPackage(null)} />}
+      {showNotifications && <NotificationsPanel packages={packages} onClose={() => setShowNotifications(false)} onOpen={(item) => { setShowNotifications(false); setSelectedPackage(item); }} />}
     </div>
   );
 }
 
-function ResidentApp({ packages, unit, displayName, preview = false, onBack, onCollect }: { packages: PackageRecord[]; unit: OperationalUnit | null; displayName: string; preview?: boolean; onBack: () => void; onCollect: (id: string) => void }) {
-  const [tab, setTab] = useState<'home' | 'history'>('home');
+function ResidentApp({ packages, unit, condominium, displayName, email, preview = false, onBack, onCollect }: { packages: PackageRecord[]; unit: OperationalUnit | null; condominium: OperationalCondominium; displayName: string; email: string; preview?: boolean; onBack: () => void; onCollect: (id: string) => void }) {
+  const [tab, setTab] = useState<'home' | 'history' | 'profile'>('home');
+  const [showNotifications, setShowNotifications] = useState(false);
   const residentPackages = unit ? packages.filter((item) => item.unitId === unit.id) : [];
   const waiting = residentPackages.filter((item) => item.status === 'waiting');
   const [selected, setSelected] = useState<string | null>(null);
@@ -814,7 +850,7 @@ function ResidentApp({ packages, unit, displayName, preview = false, onBack, onC
     <main className="resident-app">
       <div className="resident-desktop-bar"><Brand /><button className="button button--outline" onClick={onBack} type="button"><ArrowLeft size={17} />Voltar à portaria</button></div>
       <div className="phone-surface">
-        <header className="resident-header"><Brand /><button className="icon-button notification" aria-label="Notificações"><Bell size={20} /><i /></button></header>
+        <header className="resident-header"><Brand /><button className="icon-button notification" onClick={() => setShowNotifications(true)} type="button" aria-label={`Notificações${waiting.length ? `, ${waiting.length} pendentes` : ''}`}><Bell size={20} />{waiting.length > 0 && <i />}</button></header>
         <section className="resident-content">
           <div className="resident-welcome"><div><span>OLÁ, {preview ? 'MORADOR' : displayName.toLocaleUpperCase('pt-BR')}</span><h1>Suas encomendas</h1></div><span className="avatar avatar--large">{userInitials(preview ? 'Morador' : displayName)}</span></div>
           {tab === 'home' && (
@@ -838,10 +874,11 @@ function ResidentApp({ packages, unit, displayName, preview = false, onBack, onC
             </>
           )}
           {tab === 'history' && (
-            <section className="history-list"><div className="section-title"><div><h2>Histórico recente</h2></div></div>{residentPackages.filter((item) => item.status === 'collected').map((item) => <article key={item.id}><span className="carrier-mark">{item.carrier.slice(0, 1)}</span><div><strong>{item.carrier}</strong><small>Retirada em {item.collectedAt}</small></div><Check size={18} /></article>)}</section>
+            <section className="history-list"><div className="section-title"><div><h2>Histórico recente</h2></div></div>{residentPackages.filter((item) => item.status === 'collected').map((item) => <article key={item.id}><span className="carrier-mark">{item.carrier.slice(0, 1)}</span><div><strong>{item.carrier}</strong><small>Retirada em {item.collectedAt}</small></div><Check size={18} /></article>)}{residentPackages.every((item) => item.status !== 'collected') && <div className="resident-empty"><Archive size={24} /><strong>Nenhuma retirada registrada</strong><span>As confirmações aparecerão aqui.</span></div>}</section>
           )}
+          {tab === 'profile' && <section className="resident-profile"><span className="avatar avatar--large">{userInitials(preview ? 'Morador' : displayName)}</span><h2>{preview ? 'Pré-visualização do morador' : displayName}</h2><p>{preview ? 'Esta tela mostra exatamente a experiência da unidade selecionada.' : email}</p><dl><div><dt>Condomínio</dt><dd>{condominium.name}</dd></div><div><dt>Unidade</dt><dd>{unit ? `${unit.buildingName} · ${unit.unitNumber}` : 'Não vinculada'}</dd></div><div><dt>Status</dt><dd>Ativo</dd></div></dl><button className="button button--outline button--full" onClick={onBack} type="button"><LogOut size={17} />{preview ? 'Voltar à portaria' : 'Sair da conta'}</button></section>}
         </section>
-        <nav className="resident-nav" aria-label="Navegação do morador"><button className={tab === 'home' ? 'active' : ''} onClick={() => setTab('home')} type="button"><Boxes size={20} /><span>Encomendas</span></button><button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')} type="button"><Archive size={20} /><span>Histórico</span></button><button type="button"><UserRound size={20} /><span>Perfil</span></button></nav>
+        <nav className="resident-nav" aria-label="Navegação do morador"><button className={tab === 'home' ? 'active' : ''} onClick={() => setTab('home')} type="button"><Boxes size={20} /><span>Encomendas</span></button><button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')} type="button"><Archive size={20} /><span>Histórico</span></button><button className={tab === 'profile' ? 'active' : ''} onClick={() => setTab('profile')} type="button"><UserRound size={20} /><span>Perfil</span></button></nav>
       </div>
       {selectedPackage && (
         <div className="panel-layer resident-modal-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setSelected(null)}>
@@ -857,6 +894,7 @@ function ResidentApp({ packages, unit, displayName, preview = false, onBack, onC
           </section>
         </div>
       )}
+      {showNotifications && <NotificationsPanel packages={residentPackages} onClose={() => setShowNotifications(false)} onOpen={(item) => { setShowNotifications(false); setSelected(item.id); }} />}
     </main>
   );
 }
@@ -878,6 +916,8 @@ export default function App() {
   const [operationalError, setOperationalError] = useState<string | null>(null);
   const [packageSaving, setPackageSaving] = useState(false);
   const [showNewPackage, setShowNewPackage] = useState(false);
+  const [showPreviewPicker, setShowPreviewPicker] = useState(false);
+  const [previewUnitId, setPreviewUnitId] = useState('');
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -957,7 +997,7 @@ export default function App() {
       if (access.kind === 'resident') packageQuery.eq('unit_id', access.unitId);
 
       const [condominiumResult, buildingsResult, unitsResult, packagesResult, staffResult, residentsResult, profilesResult] = await Promise.all([
-        supabase.from('condominiums').select('id,name,registration_code,staff_limit').eq('id', condominiumId).single(),
+        supabase.from('condominiums').select('id,name,registration_code,staff_limit,legal_name,document_number,address_line,city,state,postal_code,contact_name,contact_email').eq('id', condominiumId).single(),
         supabase.from('buildings').select('id,name,code,floors').eq('condominium_id', condominiumId).order('sort_order'),
         supabase.from('units').select('id,unit_number,building_id,floor_label').eq('condominium_id', condominiumId).eq('status', 'active').order('unit_number'),
         packageQuery,
@@ -1007,6 +1047,14 @@ export default function App() {
         name: condominiumResult.data.name,
         registrationCode: condominiumResult.data.registration_code,
         staffLimit: condominiumResult.data.staff_limit,
+        legalName: condominiumResult.data.legal_name,
+        documentNumber: condominiumResult.data.document_number,
+        addressLine: condominiumResult.data.address_line,
+        city: condominiumResult.data.city,
+        state: condominiumResult.data.state,
+        postalCode: condominiumResult.data.postal_code,
+        contactName: condominiumResult.data.contact_name,
+        contactEmail: condominiumResult.data.contact_email,
       });
       setBuildings((buildingsResult.data || []).map((building) => ({ id: building.id, name: building.name, code: building.code, floors: building.floors })));
       setUnits(nextUnits);
@@ -1169,15 +1217,16 @@ export default function App() {
   if (!access || access.kind === 'none') return <NoAccess email={email} onSignOut={signOut} />;
   if (operationalLoading) return <main className="system-state"><Brand /><LoaderCircle className="spin" size={30} /><p>Carregando dados do condomínio…</p></main>;
   if (operationalError || !condominium) return <main className="system-state"><Brand /><ShieldCheck size={30} /><h1>Não foi possível carregar o condomínio</h1><p>{operationalError || 'O vínculo está ativo, mas os dados do condomínio não foram encontrados.'}</p><button className="button button--outline" onClick={() => window.location.reload()} type="button"><RefreshCw size={17} />Tentar novamente</button></main>;
-  if (access.kind === 'resident') return <ResidentApp packages={packages} unit={units.find((unit) => unit.id === access.unitId) || null} displayName={displayName} onBack={signOut} onCollect={collectPackage} />;
+  if (access.kind === 'resident') return <ResidentApp packages={packages} unit={units.find((unit) => unit.id === access.unitId) || null} condominium={condominium} displayName={displayName} email={email} onBack={signOut} onCollect={collectPackage} />;
 
   return (
     <>
       {view === 'doorman' ? (
-        <DoormanDashboard condominium={condominium} buildings={buildings} units={units} packages={packages} staff={staff} residents={residents} staffLimit={condominium.staffLimit} canManage={access.role === 'admin'} onCreateBuilding={createBuilding} onCreateUnit={createUnit} onInvitePerson={invitePerson} onStaffStatus={changeStaffStatus} onResidentStatus={changeResidentStatus} onNewPackage={() => setShowNewPackage(true)} onResidentView={() => setView('resident')} displayName={displayName} email={email} onSignOut={signOut} />
+        <DoormanDashboard condominium={condominium} buildings={buildings} units={units} packages={packages} staff={staff} residents={residents} staffLimit={condominium.staffLimit} canManage={access.role === 'admin'} onCreateBuilding={createBuilding} onCreateUnit={createUnit} onInvitePerson={invitePerson} onStaffStatus={changeStaffStatus} onResidentStatus={changeResidentStatus} onNewPackage={() => setShowNewPackage(true)} onResidentView={() => setShowPreviewPicker(true)} displayName={displayName} email={email} onSignOut={signOut} />
       ) : (
-        <ResidentApp packages={packages} unit={units[0] || null} displayName={displayName} preview onBack={() => setView('doorman')} onCollect={collectPackage} />
+        <ResidentApp packages={packages} unit={units.find((unit) => unit.id === previewUnitId) || null} condominium={condominium} displayName={displayName} email={email} preview onBack={() => setView('doorman')} onCollect={collectPackage} />
       )}
+      {showPreviewPicker && <div className="panel-layer resident-modal-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowPreviewPicker(false)}><section className="preview-picker" role="dialog" aria-modal="true" aria-labelledby="preview-picker-title"><header><div><span className="eyebrow">PRÉ-VISUALIZAÇÃO</span><h2 id="preview-picker-title">Escolha uma unidade</h2><p>A prévia exibirá somente as encomendas vinculadas à unidade escolhida.</p></div><button className="icon-button" onClick={() => setShowPreviewPicker(false)} type="button" aria-label="Fechar"><X size={20} /></button></header><label>Unidade<select autoFocus value={previewUnitId} onChange={(event) => setPreviewUnitId(event.target.value)}><option value="">Selecionar unidade</option>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.buildingName} · {unit.unitNumber}</option>)}</select></label><footer><button className="button button--ghost" onClick={() => setShowPreviewPicker(false)} type="button">Cancelar</button><button className="button button--primary" disabled={!previewUnitId} onClick={() => { setShowPreviewPicker(false); setView('resident'); }} type="button"><UserRound size={17} />Abrir prévia</button></footer></section></div>}
       {showNewPackage && <NewPackagePanel units={units} saving={packageSaving} onClose={() => setShowNewPackage(false)} onSave={(form) => void addPackage(form)} />}
       {toast && <div className="toast" role="status"><Check size={18} /><span>{toast}</span></div>}
     </>
