@@ -51,6 +51,7 @@ type OperationalCondominium = {
   id: string;
   name: string;
   registrationCode: string;
+  staffLimit: number;
 };
 
 type OperationalUnit = {
@@ -69,6 +70,27 @@ type OperationalBuilding = {
 };
 
 type CreateResult = { ok: boolean; error?: string };
+
+type StaffPerson = {
+  id: string;
+  userId: string | null;
+  email: string;
+  fullName: string;
+  role: 'admin' | 'doorman';
+  status: 'invited' | 'active' | 'inactive';
+  isOwner: boolean;
+};
+
+type ResidentPerson = {
+  id: string;
+  userId: string;
+  email: string;
+  fullName: string;
+  status: 'pending' | 'active' | 'inactive' | 'rejected';
+  unitId: string;
+  unitNumber: string;
+  buildingName: string;
+};
 
 type PackageRow = {
   id: string;
@@ -526,7 +548,9 @@ type AccessContext =
   | { kind: 'resident'; condominiumId: string; unitId: string }
   | { kind: 'none' };
 
-function Sidebar({ collapsed, activeSection, onNavigate, onToggle, onResidentView, condominiumName, waitingCount, displayName, email, onSignOut }: { collapsed: boolean; activeSection: 'dashboard' | 'units'; onNavigate: (section: 'dashboard' | 'units') => void; onToggle: () => void; onResidentView: () => void; condominiumName: string; waitingCount: number; displayName: string; email: string; onSignOut: () => void }) {
+type OperationalSection = 'dashboard' | 'units' | 'people';
+
+function Sidebar({ collapsed, activeSection, onNavigate, onToggle, onResidentView, condominiumName, waitingCount, displayName, email, onSignOut }: { collapsed: boolean; activeSection: OperationalSection; onNavigate: (section: OperationalSection) => void; onToggle: () => void; onResidentView: () => void; condominiumName: string; waitingCount: number; displayName: string; email: string; onSignOut: () => void }) {
   return (
     <aside className="sidebar">
       <div className="sidebar-brand-row"><Brand /><button className="sidebar-toggle" onClick={onToggle} type="button" aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}><Menu size={18} /></button></div>
@@ -541,7 +565,7 @@ function Sidebar({ collapsed, activeSection, onNavigate, onToggle, onResidentVie
         <a className="nav-link" href="#historico"><Archive size={19} />Histórico</a>
         <p>GESTÃO</p>
         <a className={`nav-link ${activeSection === 'units' ? 'nav-link--active' : ''}`} href="#unidades" onClick={() => onNavigate('units')}><Building2 size={19} />Unidades</a>
-        <a className="nav-link" href="#pessoas"><UsersRound size={19} />Pessoas</a>
+        <a className={`nav-link ${activeSection === 'people' ? 'nav-link--active' : ''}`} href="#pessoas" onClick={() => onNavigate('people')}><UsersRound size={19} />Pessoas</a>
         <a className="nav-link" href="#configuracoes"><Settings size={19} />Configurações</a>
       </nav>
       <button className="resident-preview" onClick={onResidentView} type="button">
@@ -672,9 +696,45 @@ function UnitsManagement({ condominium, buildings, units, canManage, onCreateBui
   </section>;
 }
 
-function DoormanDashboard({ condominium, buildings, units, packages, canManage, onCreateBuilding, onCreateUnit, onNewPackage, onResidentView, displayName, email, onSignOut }: { condominium: OperationalCondominium; buildings: OperationalBuilding[]; units: OperationalUnit[]; packages: PackageRecord[]; canManage: boolean; onCreateBuilding: (name: string, code: string, floors: string) => Promise<CreateResult>; onCreateUnit: (buildingId: string, unitNumber: string, floorLabel: string) => Promise<CreateResult>; onNewPackage: () => void; onResidentView: () => void; displayName: string; email: string; onSignOut: () => void }) {
+function PeopleManagement({ condominium, units, staffLimit, staff, residents, canManage, onInvite, onStaffStatus, onResidentStatus }: { condominium: OperationalCondominium; units: OperationalUnit[]; staffLimit: number; staff: StaffPerson[]; residents: ResidentPerson[]; canManage: boolean; onInvite: (role: 'doorman' | 'resident', email: string, fullName?: string, unitId?: string) => Promise<CreateResult>; onStaffStatus: (id: string, active: boolean) => Promise<CreateResult>; onResidentStatus: (person: ResidentPerson, action: 'approve' | 'deactivate' | 'reactivate') => Promise<CreateResult> }) {
+  const [tab, setTab] = useState<'staff' | 'residents'>('staff');
+  const [email, setEmail] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [unitId, setUnitId] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
+  const operationalStaff = staff.filter((person) => person.role === 'doorman' && person.status !== 'inactive').length;
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setSaving(true); setMessage(null);
+    const result = await onInvite(tab === 'staff' ? 'doorman' : 'resident', email, fullName, unitId);
+    setSaving(false);
+    if (!result.ok) setMessage({ tone: 'error', text: result.error || 'Não foi possível enviar o convite.' });
+    else {
+      setEmail(''); setFullName(''); setUnitId('');
+      setMessage({ tone: 'success', text: tab === 'staff' ? 'Acesso da portaria liberado e convite processado.' : 'Morador vinculado à unidade e convite processado.' });
+    }
+  }
+
+  async function changeStatus(action: () => Promise<CreateResult>, success: string) {
+    setMessage(null);
+    const result = await action();
+    setMessage(result.ok ? { tone: 'success', text: success } : { tone: 'error', text: result.error || 'Não foi possível atualizar o acesso.' });
+  }
+
+  return <section className="people-page">
+    <header className="page-heading"><div><span className="eyebrow">GESTÃO · ACESSOS</span><h1>Pessoas</h1><p>Gerencie a equipe da portaria e os moradores vinculados ao {condominium.name}.</p></div></header>
+    <div className="people-tabs"><button className={tab === 'staff' ? 'active' : ''} onClick={() => { setTab('staff'); setMessage(null); }} type="button"><UsersRound size={17} />Equipe da portaria <span>{staff.filter((person) => person.role === 'doorman').length}</span></button><button className={tab === 'residents' ? 'active' : ''} onClick={() => { setTab('residents'); setMessage(null); }} type="button"><UserRound size={17} />Moradores <span>{residents.length}</span></button></div>
+    {message && <div className={`auth-message auth-message--${message.tone}`}>{message.text}</div>}
+    {canManage && <form className="people-invite" onSubmit={submit}><div><span className="eyebrow">{tab === 'staff' ? 'NOVO PORTEIRO' : 'NOVO MORADOR'}</span><h2>{tab === 'staff' ? 'Convidar para a portaria' : 'Vincular morador'}</h2><p>{tab === 'staff' ? `${operationalStaff} de ${staffLimit} acessos operacionais utilizados.` : 'O morador receberá um convite e acesso à unidade selecionada.'}</p></div>{tab === 'residents' && <label>Nome completo<input required value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Nome do morador" /></label>}<label>E-mail<input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="pessoa@exemplo.com" /></label>{tab === 'residents' && <label>Unidade<select required value={unitId} onChange={(event) => setUnitId(event.target.value)}><option value="">Selecionar unidade</option>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.buildingName} · {unit.unitNumber}</option>)}</select></label>}<button className="button button--primary" disabled={saving || (tab === 'staff' && operationalStaff >= staffLimit) || (tab === 'residents' && units.length === 0)} type="submit">{saving ? <LoaderCircle className="spin" size={17} /> : <Mail size={17} />}{saving ? 'Enviando…' : 'Enviar convite'}</button></form>}
+    <section className="people-list"><header><div><h2>{tab === 'staff' ? 'Equipe cadastrada' : 'Moradores cadastrados'}</h2><p>{tab === 'staff' ? 'O administrador principal não ocupa o limite operacional.' : 'Vínculos atuais e solicitações de acesso.'}</p></div></header>{tab === 'staff' ? <div className="people-table">{staff.map((person) => <article key={person.id}><span className="administrator-avatar">{userInitials(person.fullName || person.email)}</span><div><strong>{person.fullName || person.email}</strong><small>{person.email}</small></div><span>{person.role === 'admin' ? 'Administrador' : 'Porteiro'}</span><em className={`membership-status membership-status--${person.status}`}>{person.status === 'active' ? 'Ativo' : person.status === 'invited' ? 'Convidado' : 'Inativo'}</em>{canManage && person.role === 'doorman' && <button className="people-action" onClick={() => void changeStatus(() => onStaffStatus(person.id, person.status === 'inactive'), person.status === 'inactive' ? 'Porteiro reativado.' : 'Porteiro desativado.')} type="button" title={person.status === 'inactive' ? 'Reativar' : 'Desativar'}>{person.status === 'inactive' ? <RotateCcw size={15} /> : <Trash2 size={15} />}</button>}</article>)}</div> : <div className="people-table">{residents.map((person) => <article key={person.id}><span className="administrator-avatar">{userInitials(person.fullName || person.email)}</span><div><strong>{person.fullName || person.email || 'Morador'}</strong><small>{person.email || `${person.buildingName} · ${person.unitNumber}`}</small></div><span>{person.buildingName} · {person.unitNumber}</span><em className={`membership-status membership-status--${person.status}`}>{person.status === 'active' ? 'Ativo' : person.status === 'pending' ? 'Pendente' : person.status === 'inactive' ? 'Inativo' : 'Rejeitado'}</em>{canManage && <span className="people-row-actions">{person.status === 'pending' && <button onClick={() => void changeStatus(() => onResidentStatus(person, 'approve'), 'Morador aprovado.')} type="button" title="Aprovar"><Check size={15} /></button>}{person.status === 'active' && <button onClick={() => void changeStatus(() => onResidentStatus(person, 'deactivate'), 'Morador desativado.')} type="button" title="Desativar"><Trash2 size={15} /></button>}{person.status === 'inactive' && <button onClick={() => void changeStatus(() => onResidentStatus(person, 'reactivate'), 'Morador reativado.')} type="button" title="Reativar"><RotateCcw size={15} /></button>}</span>}</article>)}</div>}{(tab === 'staff' ? staff.length : residents.length) === 0 && <div className="empty-state"><UsersRound size={25} /><strong>Nenhuma pessoa cadastrada</strong><span>Use o formulário acima para liberar o primeiro acesso.</span></div>}</section>
+  </section>;
+}
+
+function DoormanDashboard({ condominium, buildings, units, packages, staff, residents, staffLimit, canManage, onCreateBuilding, onCreateUnit, onInvitePerson, onStaffStatus, onResidentStatus, onNewPackage, onResidentView, displayName, email, onSignOut }: { condominium: OperationalCondominium; buildings: OperationalBuilding[]; units: OperationalUnit[]; packages: PackageRecord[]; staff: StaffPerson[]; residents: ResidentPerson[]; staffLimit: number; canManage: boolean; onCreateBuilding: (name: string, code: string, floors: string) => Promise<CreateResult>; onCreateUnit: (buildingId: string, unitNumber: string, floorLabel: string) => Promise<CreateResult>; onInvitePerson: (role: 'doorman' | 'resident', email: string, fullName?: string, unitId?: string) => Promise<CreateResult>; onStaffStatus: (id: string, active: boolean) => Promise<CreateResult>; onResidentStatus: (person: ResidentPerson, action: 'approve' | 'deactivate' | 'reactivate') => Promise<CreateResult>; onNewPackage: () => void; onResidentView: () => void; displayName: string; email: string; onSignOut: () => void }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [section, setSection] = useState<'dashboard' | 'units'>(() => window.location.hash === '#unidades' ? 'units' : 'dashboard');
+  const [section, setSection] = useState<OperationalSection>(() => window.location.hash === '#unidades' ? 'units' : window.location.hash === '#pessoas' ? 'people' : 'dashboard');
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'waiting' | 'all'>('waiting');
   const visiblePackages = useMemo(() => packages.filter((item) => {
@@ -699,7 +759,7 @@ function DoormanDashboard({ condominium, buildings, units, packages, canManage, 
           <div className="topbar__actions"><button className="icon-button notification" aria-label="Notificações"><Bell size={20} /><i /></button><button className="mobile-avatar" type="button">{userInitials(displayName)}</button></div>
         </header>
         <div className="dashboard__content">
-          {section === 'units' ? <UnitsManagement condominium={condominium} buildings={buildings} units={units} canManage={canManage} onCreateBuilding={onCreateBuilding} onCreateUnit={onCreateUnit} /> : <>
+          {section === 'units' ? <UnitsManagement condominium={condominium} buildings={buildings} units={units} canManage={canManage} onCreateBuilding={onCreateBuilding} onCreateUnit={onCreateUnit} /> : section === 'people' ? <PeopleManagement condominium={condominium} units={units} staffLimit={staffLimit} staff={staff} residents={residents} canManage={canManage} onInvite={onInvitePerson} onStaffStatus={onStaffStatus} onResidentStatus={onResidentStatus} /> : <>
           <section className="page-heading">
             <div><span className="eyebrow">PORTARIA · OPERAÇÃO ATIVA</span><h1>Olá, {displayName.split(' ')[0]}.</h1><p>Acompanhe o que chegou e mantenha a portaria em ordem.</p></div>
             <button className="button button--primary button--large" disabled={units.length === 0} onClick={onNewPackage} title={units.length === 0 ? 'Cadastre uma unidade antes de receber encomendas' : undefined} type="button"><PackagePlus size={19} />Nova encomenda</button>
@@ -811,6 +871,9 @@ export default function App() {
   const [buildings, setBuildings] = useState<OperationalBuilding[]>([]);
   const [units, setUnits] = useState<OperationalUnit[]>([]);
   const [packages, setPackages] = useState<PackageRecord[]>([]);
+  const [staff, setStaff] = useState<StaffPerson[]>([]);
+  const [residents, setResidents] = useState<ResidentPerson[]>([]);
+  const [peopleRefreshKey, setPeopleRefreshKey] = useState(0);
   const [operationalLoading, setOperationalLoading] = useState(false);
   const [operationalError, setOperationalError] = useState<string | null>(null);
   const [packageSaving, setPackageSaving] = useState(false);
@@ -872,6 +935,8 @@ export default function App() {
       setBuildings([]);
       setUnits([]);
       setPackages([]);
+      setStaff([]);
+      setResidents([]);
       setOperationalError(null);
       setOperationalLoading(false);
       return;
@@ -891,14 +956,17 @@ export default function App() {
         .limit(200);
       if (access.kind === 'resident') packageQuery.eq('unit_id', access.unitId);
 
-      const [condominiumResult, buildingsResult, unitsResult, packagesResult] = await Promise.all([
-        supabase.from('condominiums').select('id,name,registration_code').eq('id', condominiumId).single(),
+      const [condominiumResult, buildingsResult, unitsResult, packagesResult, staffResult, residentsResult, profilesResult] = await Promise.all([
+        supabase.from('condominiums').select('id,name,registration_code,staff_limit').eq('id', condominiumId).single(),
         supabase.from('buildings').select('id,name,code,floors').eq('condominium_id', condominiumId).order('sort_order'),
         supabase.from('units').select('id,unit_number,building_id,floor_label').eq('condominium_id', condominiumId).eq('status', 'active').order('unit_number'),
         packageQuery,
+        supabase.from('staff_memberships').select('id,user_id,invited_email,role,status,is_owner').eq('condominium_id', condominiumId).order('created_at'),
+        supabase.from('unit_memberships').select('id,user_id,unit_id,status').eq('condominium_id', condominiumId).order('created_at'),
+        supabase.from('profiles').select('id,full_name,email'),
       ]);
       if (!active) return;
-      const loadError = condominiumResult.error || buildingsResult.error || unitsResult.error || packagesResult.error;
+      const loadError = condominiumResult.error || buildingsResult.error || unitsResult.error || packagesResult.error || staffResult.error || residentsResult.error || profilesResult.error;
       if (loadError) {
         setOperationalError(loadError.message);
         setOperationalLoading(false);
@@ -914,6 +982,7 @@ export default function App() {
         floorLabel: unit.floor_label,
       }));
       const unitsById = new Map(nextUnits.map((unit) => [unit.id, unit]));
+      const profilesById = new Map((profilesResult.data || []).map((profile) => [profile.id, profile]));
       const nextPackages: PackageRecord[] = ((packagesResult.data || []) as PackageRow[]).flatMap((item) => {
         const unit = unitsById.get(item.unit_id);
         if (!unit || item.status === 'cancelled') return [];
@@ -937,19 +1006,65 @@ export default function App() {
         id: condominiumResult.data.id,
         name: condominiumResult.data.name,
         registrationCode: condominiumResult.data.registration_code,
+        staffLimit: condominiumResult.data.staff_limit,
       });
       setBuildings((buildingsResult.data || []).map((building) => ({ id: building.id, name: building.name, code: building.code, floors: building.floors })));
       setUnits(nextUnits);
       setPackages(nextPackages);
+      setStaff((staffResult.data || []).filter((membership) => membership.role === 'doorman' || membership.is_owner).map((membership) => {
+        const profile = membership.user_id ? profilesById.get(membership.user_id) : null;
+        return { id: membership.id, userId: membership.user_id, email: membership.invited_email || profile?.email || '', fullName: profile?.full_name || '', role: membership.role as 'admin' | 'doorman', status: membership.status as 'invited' | 'active' | 'inactive', isOwner: membership.is_owner };
+      }));
+      setResidents((residentsResult.data || []).flatMap((membership) => {
+        const unit = unitsById.get(membership.unit_id);
+        if (!unit) return [];
+        const profile = profilesById.get(membership.user_id);
+        return [{ id: membership.id, userId: membership.user_id, email: profile?.email || '', fullName: profile?.full_name || '', status: membership.status as 'pending' | 'active' | 'inactive' | 'rejected', unitId: membership.unit_id, unitNumber: unit.unitNumber, buildingName: unit.buildingName }];
+      }));
       setOperationalLoading(false);
     }
     void loadOperationalData();
     return () => { active = false; };
-  }, [access]);
+  }, [access, peopleRefreshKey]);
 
   function notify(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(null), 3200);
+  }
+
+  async function invitePerson(role: 'doorman' | 'resident', invitationEmail: string, fullName?: string, unitId?: string): Promise<CreateResult> {
+    if (!supabase || !condominium) return { ok: false, error: 'Condomínio não carregado.' };
+    const { data, error } = await supabase.functions.invoke<InvitationResponse>('invite-condominium-admin', {
+      body: { condominiumId: condominium.id, email: invitationEmail.trim(), role, fullName: fullName?.trim(), unitId },
+    });
+    if (error || !data?.ok) {
+      const message = data?.error || error?.message || 'Não foi possível enviar o convite.';
+      if (message.includes('staff_limit_reached')) return { ok: false, error: 'O limite de usuários da portaria foi atingido.' };
+      if (message.includes('duplicate')) return { ok: false, error: 'Esta pessoa já possui um vínculo no condomínio.' };
+      return { ok: false, error: message };
+    }
+    setPeopleRefreshKey((current) => current + 1);
+    return { ok: true };
+  }
+
+  async function changeStaffStatus(id: string, active: boolean): Promise<CreateResult> {
+    if (!supabase) return { ok: false, error: 'Supabase não configurado.' };
+    const { error } = await supabase.rpc('set_staff_member_status', { p_membership_id: id, p_active: active });
+    if (error) return { ok: false, error: error.message };
+    setPeopleRefreshKey((current) => current + 1);
+    return { ok: true };
+  }
+
+  async function changeResidentStatus(person: ResidentPerson, action: 'approve' | 'deactivate' | 'reactivate'): Promise<CreateResult> {
+    if (!supabase) return { ok: false, error: 'Supabase não configurado.' };
+    const result = action === 'approve'
+      ? await supabase.rpc('approve_resident_membership', { p_membership_id: person.id })
+      : action === 'reactivate'
+        ? await supabase.rpc('reactivate_resident_membership', { p_membership_id: person.id })
+        : await supabase.rpc('deactivate_resident_membership', { p_membership_id: person.id, p_reason: 'Desativado pela administração do condomínio' });
+    if (result.error) return { ok: false, error: result.error.message };
+    setPeopleRefreshKey((current) => current + 1);
+    return { ok: true };
   }
 
   async function createBuilding(name: string, code: string, floors: string): Promise<CreateResult> {
@@ -1059,7 +1174,7 @@ export default function App() {
   return (
     <>
       {view === 'doorman' ? (
-        <DoormanDashboard condominium={condominium} buildings={buildings} units={units} packages={packages} canManage={access.role === 'admin'} onCreateBuilding={createBuilding} onCreateUnit={createUnit} onNewPackage={() => setShowNewPackage(true)} onResidentView={() => setView('resident')} displayName={displayName} email={email} onSignOut={signOut} />
+        <DoormanDashboard condominium={condominium} buildings={buildings} units={units} packages={packages} staff={staff} residents={residents} staffLimit={condominium.staffLimit} canManage={access.role === 'admin'} onCreateBuilding={createBuilding} onCreateUnit={createUnit} onInvitePerson={invitePerson} onStaffStatus={changeStaffStatus} onResidentStatus={changeResidentStatus} onNewPackage={() => setShowNewPackage(true)} onResidentView={() => setView('resident')} displayName={displayName} email={email} onSignOut={signOut} />
       ) : (
         <ResidentApp packages={packages} unit={units[0] || null} displayName={displayName} preview onBack={() => setView('doorman')} onCollect={collectPackage} />
       )}
