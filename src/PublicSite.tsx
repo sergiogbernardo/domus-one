@@ -48,9 +48,12 @@ function PublicBrand() {
 }
 
 function AccessPage({ audience, onBack, onLegal }: { audience: 'staff' | 'resident'; onBack: () => void; onLegal: (page: PublicPage) => void }) {
-  const [mode, setMode] = useState<'signin' | 'activate'>('signin');
+  const [loginType, setLoginType] = useState<'internal' | 'email'>('internal');
+  const [emailMode, setEmailMode] = useState<'signin' | 'activate'>('signin');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [condominiumCode, setCondominiumCode] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: 'error' | 'success'; text: string } | null>(null);
@@ -62,7 +65,12 @@ function AccessPage({ audience, onBack, onLegal }: { audience: 'staff' | 'reside
     setBusy(true);
     setMessage(null);
 
-    const result = mode === 'signin'
+    const normalizedUsername = username.trim().toLowerCase();
+    const normalizedCode = condominiumCode.trim().toLowerCase().replace(/[^a-z0-9-]/g, '');
+    const internalEmail = `${normalizedUsername}.${normalizedCode}@internal.domusone.invalid`;
+    const result = loginType === 'internal'
+      ? await supabase.auth.signInWithPassword({ email: internalEmail, password })
+      : emailMode === 'signin'
       ? await supabase.auth.signInWithPassword({ email: email.trim(), password })
       : await supabase.auth.signUp({
           email: email.trim(),
@@ -78,7 +86,7 @@ function AccessPage({ audience, onBack, onLegal }: { audience: 'staff' | 'reside
       setMessage({ tone: 'error', text: result.error.message });
       return;
     }
-    if (mode === 'activate' && !result.data.session) {
+    if (loginType === 'email' && emailMode === 'activate' && !result.data.session) {
       setMessage({ tone: 'success', text: 'Acesso ativado. Confirme o e-mail para concluir.' });
     }
   }
@@ -104,20 +112,26 @@ function AccessPage({ audience, onBack, onLegal }: { audience: 'staff' | 'reside
         <div className="access-mobile-brand"><PublicBrand /><button className="access-mobile-back" onClick={onBack} type="button" aria-label="Voltar para o site"><ArrowLeft size={18} /></button></div>
         <div className="access-form-card">
           <span className="access-role-icon">{isStaff ? <Building2 size={22} /> : <UserRound size={22} />}</span>
-          <span className="eyebrow">{mode === 'activate' ? 'PRIMEIRO ACESSO' : isStaff ? 'PORTARIA E ADMINISTRAÇÃO' : 'MORADOR'}</span>
-          <h2>{mode === 'activate' ? 'Ativar convite' : isStaff ? 'Entrar na portaria' : 'Entrar como morador'}</h2>
-          <p>{mode === 'activate' ? 'Use exatamente o e-mail convidado pelo administrador.' : 'Informe seu e-mail e senha para continuar.'}</p>
+          <span className="eyebrow">{loginType === 'internal' ? 'CONTA DO CONDOMÍNIO' : emailMode === 'activate' ? 'PRIMEIRO ACESSO' : 'ACESSO ADMINISTRATIVO'}</span>
+          <h2>{loginType === 'internal' ? (isStaff ? 'Entrar na portaria' : 'Entrar como morador') : emailMode === 'activate' ? 'Ativar convite' : 'Entrar com e-mail'}</h2>
+          <p>{loginType === 'internal' ? 'Use o código do condomínio, seu usuário e sua senha.' : emailMode === 'activate' ? 'Use exatamente o e-mail convidado pelo administrador da plataforma.' : 'Acesso exclusivo do administrador principal por e-mail.'}</p>
           <form onSubmit={submit}>
-            {mode === 'activate' && <label>Nome completo<input autoComplete="name" required value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Seu nome" /></label>}
-            <label>E-mail<input autoComplete="email" required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@exemplo.com" /></label>
-            <label>Senha<input autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} required minLength={8} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo de 8 caracteres" /></label>
+            {loginType === 'internal' ? <>
+              <label>Código do condomínio<input autoCapitalize="characters" autoComplete="organization" required value={condominiumCode} onChange={(event) => setCondominiumCode(event.target.value.toLocaleUpperCase('pt-BR'))} placeholder="Ex.: DOMUSLAB" /></label>
+              <label>Usuário<input autoCapitalize="none" autoComplete="username" required minLength={3} value={username} onChange={(event) => setUsername(event.target.value.toLowerCase())} placeholder="Ex.: joao.silva" /></label>
+            </> : <>
+              {emailMode === 'activate' && <label>Nome completo<input autoComplete="name" required value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Seu nome" /></label>}
+              <label>E-mail<input autoComplete="email" required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@exemplo.com" /></label>
+            </>}
+            <label>Senha<input autoComplete={loginType === 'internal' || emailMode === 'signin' ? 'current-password' : 'new-password'} required minLength={8} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo de 8 caracteres" /></label>
             {message && <div className={`auth-message auth-message--${message.tone}`} role="status">{message.text}</div>}
             <button className="button button--primary button--full" disabled={busy} type="submit">
               {busy ? <LoaderCircle className="spin" size={18} /> : <LockKeyhole size={18} />}
-              {busy ? 'Validando…' : mode === 'activate' ? 'Ativar meu convite' : 'Entrar com segurança'}
+              {busy ? 'Validando…' : loginType === 'email' && emailMode === 'activate' ? 'Ativar meu convite' : 'Entrar com segurança'}
             </button>
           </form>
-          {isStaff && <button className="auth-switch" onClick={() => { setMode(mode === 'signin' ? 'activate' : 'signin'); setMessage(null); }} type="button">{mode === 'signin' ? 'Recebeu um convite? Ativar acesso' : 'Já ativou? Entrar na portaria'}</button>}
+          {isStaff && loginType === 'email' && <button className="auth-switch" onClick={() => { setEmailMode(emailMode === 'signin' ? 'activate' : 'signin'); setMessage(null); }} type="button">{emailMode === 'signin' ? 'Recebeu o convite principal? Ativar acesso' : 'Já ativou? Entrar com e-mail'}</button>}
+          {isStaff && <button className="auth-switch auth-switch--secondary" onClick={() => { setLoginType(loginType === 'internal' ? 'email' : 'internal'); setEmailMode('signin'); setMessage(null); }} type="button">{loginType === 'internal' ? 'Sou administrador principal — entrar com e-mail' : 'Usar uma conta interna do condomínio'}</button>}
           {!isStaff && <div className="resident-login-help"><ShieldCheck size={16} /><span>Seu acesso precisa estar aprovado pela administração do condomínio.</span></div>}
           <div className="access-legal">Ao continuar, você concorda com os <button onClick={() => onLegal('terms')} type="button">Termos de Uso</button> e a <button onClick={() => onLegal('privacy')} type="button">Política de Privacidade</button>.</div>
         </div>

@@ -103,6 +103,7 @@ h1, h2, h3, p { margin-top: 0; }
 .auth-message--error { color: #842d2d; background: #fff0f0; border-color: #f0cccc; }
 .auth-message--success { color: #155f50; background: var(--mineral-pale); border-color: #c7e3dc; }
 .auth-switch { width: 100%; margin-top: 18px; padding: 8px; color: var(--mineral); background: transparent; border: 0; font-size: 11px; font-weight: 600; cursor: pointer; }
+.auth-switch--secondary { margin-top: 2px; color: var(--slate); }
 .resident-access-note { display: flex; align-items: center; gap: 8px; margin-top: 22px; padding-top: 18px; color: #7d898f; border-top: 1px solid var(--stone-200); font-size: 9px; line-height: 1.5; }
 .resident-access-note svg { flex: 0 0 auto; color: var(--mineral); }
 .system-state { min-height: 100vh; display: grid; place-items: center; align-content: center; gap: 12px; padding: 30px; text-align: center; color: var(--slate); background: var(--stone-50); }
@@ -245,7 +246,7 @@ h1, h2, h3, p { margin-top: 0; }
 .people-tabs button.active { color: var(--navy-950); background: white; box-shadow: 0 1px 3px rgb(11 22 35 / 8%); }
 .people-tabs button span { min-width: 20px; padding: 2px 6px; color: var(--mineral); background: var(--mineral-pale); border-radius: 9px; font-size: 8px; }
 .people-page > .auth-message { margin-bottom: 14px; }
-.people-invite { display: grid; grid-template-columns: minmax(210px, 1.4fr) repeat(2, minmax(150px, 1fr)) auto; align-items: end; gap: 13px; margin-bottom: 18px; padding: 18px 20px; background: white; border: 1px solid var(--stone-200); border-radius: 11px; box-shadow: var(--shadow-sm); }
+.people-invite { display: grid; grid-template-columns: minmax(210px, 1.35fr) repeat(3, minmax(135px, 1fr)) auto; align-items: end; gap: 13px; margin-bottom: 18px; padding: 18px 20px; background: white; border: 1px solid var(--stone-200); border-radius: 11px; box-shadow: var(--shadow-sm); }
 .people-invite h2, .people-list h2 { margin: 0 0 4px; color: var(--navy-950); font: 600 16px/1.2 'Manrope', sans-serif; }
 .people-invite p, .people-list p { margin: 0; color: var(--slate); font-size: 9px; }
 .people-invite label { display: grid; gap: 6px; color: #3b4851; font-size: 10px; font-weight: 600; }
@@ -261,6 +262,16 @@ h1, h2, h3, p { margin-top: 0; }
 .people-action, .people-row-actions button { width: 30px; height: 30px; display: grid; place-items: center; padding: 0; color: #596770; background: white; border: 1px solid var(--stone-200); border-radius: 7px; cursor: pointer; }
 .people-row-actions { display: flex; gap: 5px; }
 .people-action:hover, .people-row-actions button:hover { color: var(--mineral); background: var(--mineral-pale); border-color: #c8e0db; }
+.credentials-modal { width: min(100%, 460px); padding: 27px; background: white; border-radius: 14px; box-shadow: 0 24px 70px rgb(11 22 35 / 30%); animation: modal-up .22s ease-out; }
+.credentials-modal > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 20px; }
+.credentials-modal h2 { margin: 4px 0 5px; color: var(--navy-950); font: 600 20px/1.25 'Manrope', sans-serif; }
+.credentials-modal header p { margin: 0; color: var(--slate); font-size: 10px; line-height: 1.55; }
+.credentials-modal dl { margin: 0 0 18px; padding: 5px 14px; background: var(--stone-50); border: 1px solid var(--stone-200); border-radius: 9px; }
+.credentials-modal dl div { min-height: 43px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--stone-200); }
+.credentials-modal dl div:last-child { border-bottom: 0; }
+.credentials-modal dt { color: var(--slate); font-size: 9px; }
+.credentials-modal dd { margin: 0; color: var(--graphite); font: 700 11px/1.4 monospace; text-align: right; word-break: break-all; }
+.credentials-modal .button + .button { margin-top: 9px; }
 .button { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 16px; border: 1px solid transparent; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; transition: transform .15s, background .15s, border-color .15s; }
 .button:active { transform: translateY(1px); }
 .button:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
@@ -409,6 +420,16 @@ h1, h2, h3, p { margin-top: 0; }
 .detail-modal dl div, .settings-card dl div, .resident-profile dl div { min-height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 18px; border-bottom: 1px solid var(--stone-200); }
 .detail-modal dt, .settings-card dt, .resident-profile dt { color: var(--slate); font-size: 9px; }
 .detail-modal dd, .settings-card dd, .resident-profile dd { margin: 0; color: var(--graphite); font-size: 10px; font-weight: 600; text-align: right; }
+.password-change-page { min-height: 100vh; display: grid; place-items: center; padding: 28px; background: radial-gradient(circle at 50% 0%, rgb(24 122 104 / 12%), transparent 34%), var(--stone-50); }
+.password-change-card { width: min(100%, 430px); padding: 32px; background: white; border: 1px solid var(--stone-200); border-radius: 16px; box-shadow: 0 20px 60px rgb(11 22 35 / 12%); }
+.password-change-card > .brand { margin-bottom: 27px; }
+.password-change-icon { width: 50px; height: 50px; display: grid; place-items: center; margin-bottom: 18px; color: var(--mineral); background: var(--mineral-pale); border-radius: 13px; }
+.password-change-card h1 { margin: 6px 0 9px; color: var(--navy-950); font: 600 26px/1.2 'Manrope', sans-serif; letter-spacing: -.04em; }
+.password-change-card > p { margin: 0 0 22px; color: var(--slate); font-size: 11px; line-height: 1.65; }
+.password-change-card form { display: grid; gap: 15px; }
+.password-change-card label { display: grid; gap: 7px; color: #3b4851; font-size: 10px; font-weight: 600; }
+.password-change-card input { width: 100%; height: 47px; padding: 0 13px; color: var(--graphite); background: white; border: 1px solid var(--stone-300); border-radius: 9px; outline: 0; }
+.password-change-card input:focus { border-color: #6bafa1; box-shadow: 0 0 0 3px rgb(24 122 104 / 10%); }
 .notification-panel { padding: 0; overflow: hidden; }
 .notification-panel > header { margin: 0; padding: 25px 25px 18px; border-bottom: 1px solid var(--stone-200); }
 .notification-list { max-height: 420px; overflow-y: auto; }

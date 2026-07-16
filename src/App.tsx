@@ -9,6 +9,8 @@ import {
   Check,
   ChevronDown,
   Clock3,
+  Copy,
+  KeyRound,
   LayoutDashboard,
   Mail,
   LoaderCircle,
@@ -77,7 +79,13 @@ type OperationalBuilding = {
   floors: number | null;
 };
 
-type CreateResult = { ok: boolean; error?: string };
+type InternalCredentials = {
+  username: string;
+  temporaryPassword: string;
+  condominiumCode?: string;
+};
+
+type CreateResult = { ok: boolean; error?: string; credentials?: InternalCredentials };
 
 type StaffRole = 'admin' | 'syndic' | 'deputy_syndic' | 'caretaker' | 'doorman';
 type StaffInvitationRole = Exclude<StaffRole, 'admin'>;
@@ -93,7 +101,9 @@ const staffRoleLabels: Record<StaffRole, string> = {
 
 type StaffPerson = {
   id: string;
+  identityId: string | null;
   userId: string | null;
+  username: string | null;
   email: string;
   fullName: string;
   role: StaffRole;
@@ -103,7 +113,9 @@ type StaffPerson = {
 
 type ResidentPerson = {
   id: string;
+  identityId: string | null;
   userId: string;
+  username: string | null;
   email: string;
   fullName: string;
   status: 'pending' | 'active' | 'inactive' | 'rejected';
@@ -238,6 +250,12 @@ type InvitationResponse = {
   ok: boolean;
   delivery?: 'sent' | 'existing_user';
   assignmentCreated?: boolean;
+  error?: string;
+};
+
+type InternalIdentityResponse = {
+  ok: boolean;
+  credentials?: InternalCredentials;
   error?: string;
 };
 
@@ -568,6 +586,12 @@ type AccessContext =
   | { kind: 'resident'; condominiumId: string; unitId: string }
   | { kind: 'none' };
 
+type CurrentInternalIdentity = {
+  id: string;
+  username: string;
+  mustChangePassword: boolean;
+};
+
 type OperationalSection = 'dashboard' | 'history' | 'units' | 'people' | 'settings';
 
 function Sidebar({ collapsed, activeSection, onNavigate, onToggle, onResidentView, condominiumName, waitingCount, displayName, email, onSignOut }: { collapsed: boolean; activeSection: OperationalSection; onNavigate: (section: OperationalSection) => void; onToggle: () => void; onResidentView: () => void; condominiumName: string; waitingCount: number; displayName: string; email: string; onSignOut: () => void }) {
@@ -716,14 +740,15 @@ function UnitsManagement({ condominium, buildings, units, canManage, onCreateBui
   </section>;
 }
 
-function PeopleManagement({ condominium, units, staffLimit, staff, residents, canManage, onInvite, onStaffStatus, onResidentStatus }: { condominium: OperationalCondominium; units: OperationalUnit[]; staffLimit: number; staff: StaffPerson[]; residents: ResidentPerson[]; canManage: boolean; onInvite: (role: PersonInvitationRole, email: string, fullName?: string, unitId?: string) => Promise<CreateResult>; onStaffStatus: (id: string, active: boolean) => Promise<CreateResult>; onResidentStatus: (person: ResidentPerson, action: 'approve' | 'deactivate' | 'reactivate') => Promise<CreateResult> }) {
+function PeopleManagement({ condominium, units, staffLimit, staff, residents, canManage, onCreateInternal, onResetPassword, onStaffStatus, onResidentStatus }: { condominium: OperationalCondominium; units: OperationalUnit[]; staffLimit: number; staff: StaffPerson[]; residents: ResidentPerson[]; canManage: boolean; onCreateInternal: (role: PersonInvitationRole, username: string, fullName: string, unitId?: string) => Promise<CreateResult>; onResetPassword: (identityId: string) => Promise<CreateResult>; onStaffStatus: (id: string, active: boolean) => Promise<CreateResult>; onResidentStatus: (person: ResidentPerson, action: 'approve' | 'deactivate' | 'reactivate') => Promise<CreateResult> }) {
   const [tab, setTab] = useState<'staff' | 'residents'>('staff');
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [fullName, setFullName] = useState('');
   const [unitId, setUnitId] = useState('');
   const [staffRole, setStaffRole] = useState<StaffInvitationRole>('doorman');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
+  const [credentials, setCredentials] = useState<InternalCredentials | null>(null);
   const operationalStaff = staff.filter((person) => person.role === 'doorman' && person.status !== 'inactive').length;
   const selectedRoleCount = staff.filter((person) => person.role === staffRole && person.status !== 'inactive').length;
   const selectedRoleLimit = staffRole === 'doorman' ? staffLimit : 1;
@@ -731,12 +756,13 @@ function PeopleManagement({ condominium, units, staffLimit, staff, residents, ca
   async function submit(event: FormEvent) {
     event.preventDefault();
     setSaving(true); setMessage(null);
-    const result = await onInvite(tab === 'staff' ? staffRole : 'resident', email, fullName, unitId);
+    const result = await onCreateInternal(tab === 'staff' ? staffRole : 'resident', username, fullName, unitId);
     setSaving(false);
-    if (!result.ok) setMessage({ tone: 'error', text: result.error || 'Não foi possível enviar o convite.' });
+    if (!result.ok) setMessage({ tone: 'error', text: result.error || 'Não foi possível criar a conta.' });
     else {
-      setEmail(''); setFullName(''); setUnitId('');
-      setMessage({ tone: 'success', text: tab === 'staff' ? `Acesso de ${staffRoleLabels[staffRole].toLocaleLowerCase('pt-BR')} liberado e convite processado.` : 'Morador vinculado à unidade e convite processado.' });
+      setUsername(''); setFullName(''); setUnitId('');
+      setCredentials(result.credentials || null);
+      setMessage({ tone: 'success', text: tab === 'staff' ? `Conta de ${staffRoleLabels[staffRole].toLocaleLowerCase('pt-BR')} criada.` : 'Conta do morador criada e vinculada à unidade.' });
     }
   }
 
@@ -746,12 +772,20 @@ function PeopleManagement({ condominium, units, staffLimit, staff, residents, ca
     setMessage(result.ok ? { tone: 'success', text: success } : { tone: 'error', text: result.error || 'Não foi possível atualizar o acesso.' });
   }
 
+  async function resetPassword(identityId: string) {
+    setMessage(null);
+    const result = await onResetPassword(identityId);
+    if (!result.ok) setMessage({ tone: 'error', text: result.error || 'Não foi possível redefinir a senha.' });
+    else setCredentials(result.credentials || null);
+  }
+
   return <section className="people-page">
     <header className="page-heading"><div><span className="eyebrow">GESTÃO · ACESSOS</span><h1>Pessoas</h1><p>Gerencie a equipe da portaria e os moradores vinculados ao {condominium.name}.</p></div></header>
     <div className="people-tabs"><button className={tab === 'staff' ? 'active' : ''} onClick={() => { setTab('staff'); setMessage(null); }} type="button"><UsersRound size={17} />Equipe da portaria <span>{staff.filter((person) => person.role === 'doorman').length}</span></button><button className={tab === 'residents' ? 'active' : ''} onClick={() => { setTab('residents'); setMessage(null); }} type="button"><UserRound size={17} />Moradores <span>{residents.length}</span></button></div>
     {message && <div className={`auth-message auth-message--${message.tone}`}>{message.text}</div>}
-    {canManage && <form className="people-invite" onSubmit={submit}><div><span className="eyebrow">{tab === 'staff' ? 'NOVO ACESSO' : 'NOVO MORADOR'}</span><h2>{tab === 'staff' ? 'Convidar para a equipe' : 'Vincular morador'}</h2><p>{tab === 'staff' ? `${operationalStaff} de ${staffLimit} porteiros · ${selectedRoleCount} de ${selectedRoleLimit} para o perfil selecionado.` : 'O morador receberá um convite e acesso à unidade selecionada.'}</p></div>{tab === 'staff' && <label>Perfil<select value={staffRole} onChange={(event) => setStaffRole(event.target.value as StaffInvitationRole)}><option value="syndic">Síndico</option><option value="deputy_syndic">Subsíndico</option><option value="caretaker">Zelador</option><option value="doorman">Porteiro</option></select></label>}{tab === 'residents' && <label>Nome completo<input required value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Nome do morador" /></label>}<label>E-mail<input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="pessoa@exemplo.com" /></label>{tab === 'residents' && <label>Unidade<select required value={unitId} onChange={(event) => setUnitId(event.target.value)}><option value="">Selecionar unidade</option>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.buildingName} · {unit.unitNumber}</option>)}</select></label>}<button className="button button--primary" disabled={saving || (tab === 'staff' && selectedRoleCount >= selectedRoleLimit) || (tab === 'residents' && units.length === 0)} type="submit">{saving ? <LoaderCircle className="spin" size={17} /> : <Mail size={17} />}{saving ? 'Enviando…' : 'Enviar convite'}</button></form>}
-    <section className="people-list"><header><div><h2>{tab === 'staff' ? 'Equipe cadastrada' : 'Moradores cadastrados'}</h2><p>{tab === 'staff' ? 'Síndico, subsíndico e zelador possuem vagas próprias; o limite de 10 é exclusivo dos porteiros.' : 'Vínculos atuais e solicitações de acesso.'}</p></div></header>{tab === 'staff' ? <div className="people-table">{staff.map((person) => <article key={person.id}><span className="administrator-avatar">{userInitials(person.fullName || person.email)}</span><div><strong>{person.fullName || person.email}</strong><small>{person.email}</small></div><span>{staffRoleLabels[person.role]}</span><em className={`membership-status membership-status--${person.status}`}>{person.status === 'active' ? 'Ativo' : person.status === 'invited' ? 'Convidado' : 'Inativo'}</em>{canManage && person.role !== 'admin' && <button className="people-action" onClick={() => void changeStatus(() => onStaffStatus(person.id, person.status === 'inactive'), person.status === 'inactive' ? `${staffRoleLabels[person.role]} reativado.` : `${staffRoleLabels[person.role]} desativado.`)} type="button" title={person.status === 'inactive' ? 'Reativar' : 'Desativar'}>{person.status === 'inactive' ? <RotateCcw size={15} /> : <Trash2 size={15} />}</button>}</article>)}</div> : <div className="people-table">{residents.map((person) => <article key={person.id}><span className="administrator-avatar">{userInitials(person.fullName || person.email)}</span><div><strong>{person.fullName || person.email || 'Morador'}</strong><small>{person.email || `${person.buildingName} · ${person.unitNumber}`}</small></div><span>{person.buildingName} · {person.unitNumber}</span><em className={`membership-status membership-status--${person.status}`}>{person.status === 'active' ? 'Ativo' : person.status === 'pending' ? 'Pendente' : person.status === 'inactive' ? 'Inativo' : 'Rejeitado'}</em>{canManage && <span className="people-row-actions">{person.status === 'pending' && <button onClick={() => void changeStatus(() => onResidentStatus(person, 'approve'), 'Morador aprovado.')} type="button" title="Aprovar"><Check size={15} /></button>}{person.status === 'active' && <button onClick={() => void changeStatus(() => onResidentStatus(person, 'deactivate'), 'Morador desativado.')} type="button" title="Desativar"><Trash2 size={15} /></button>}{person.status === 'inactive' && <button onClick={() => void changeStatus(() => onResidentStatus(person, 'reactivate'), 'Morador reativado.')} type="button" title="Reativar"><RotateCcw size={15} /></button>}</span>}</article>)}</div>}{(tab === 'staff' ? staff.length : residents.length) === 0 && <div className="empty-state"><UsersRound size={25} /><strong>Nenhuma pessoa cadastrada</strong><span>Use o formulário acima para liberar o primeiro acesso.</span></div>}</section>
+    {canManage && <form className="people-invite" onSubmit={submit}><div><span className="eyebrow">{tab === 'staff' ? 'NOVA CONTA INTERNA' : 'NOVO MORADOR'}</span><h2>{tab === 'staff' ? 'Criar acesso da equipe' : 'Criar acesso do morador'}</h2><p>{tab === 'staff' ? `${operationalStaff} de ${staffLimit} porteiros · ${selectedRoleCount} de ${selectedRoleLimit} para o perfil selecionado.` : 'A conta será criada diretamente no condomínio, sem depender de e-mail.'}</p></div>{tab === 'staff' && <label>Perfil<select value={staffRole} onChange={(event) => setStaffRole(event.target.value as StaffInvitationRole)}><option value="syndic">Síndico</option><option value="deputy_syndic">Subsíndico</option><option value="caretaker">Zelador</option><option value="doorman">Porteiro</option></select></label>}<label>Nome completo<input required value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Nome da pessoa" /></label><label>Usuário<input autoCapitalize="none" required minLength={3} maxLength={32} pattern="[a-z0-9][a-z0-9._-]{2,31}" value={username} onChange={(event) => setUsername(event.target.value.toLowerCase().replace(/\s+/g, '.'))} placeholder="joao.silva" /></label>{tab === 'residents' && <label>Unidade<select required value={unitId} onChange={(event) => setUnitId(event.target.value)}><option value="">Selecionar unidade</option>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.buildingName} · {unit.unitNumber}</option>)}</select></label>}<button className="button button--primary" disabled={saving || (tab === 'staff' && selectedRoleCount >= selectedRoleLimit) || (tab === 'residents' && units.length === 0)} type="submit">{saving ? <LoaderCircle className="spin" size={17} /> : <UserPlus size={17} />}{saving ? 'Criando…' : 'Criar conta'}</button></form>}
+    <section className="people-list"><header><div><h2>{tab === 'staff' ? 'Equipe cadastrada' : 'Moradores cadastrados'}</h2><p>{tab === 'staff' ? 'Síndico, subsíndico e zelador possuem vagas próprias; o limite de 10 é exclusivo dos porteiros.' : 'Contas e vínculos atuais por unidade.'}</p></div></header>{tab === 'staff' ? <div className="people-table">{staff.map((person) => <article key={person.id}><span className="administrator-avatar">{userInitials(person.fullName || person.email)}</span><div><strong>{person.fullName || person.email}</strong><small>{person.username ? `@${person.username}` : person.email}</small></div><span>{staffRoleLabels[person.role]}</span><em className={`membership-status membership-status--${person.status}`}>{person.status === 'active' ? 'Ativo' : person.status === 'invited' ? 'Convidado' : 'Inativo'}</em>{canManage && person.role !== 'admin' && <span className="people-row-actions">{person.identityId && <button onClick={() => void resetPassword(person.identityId!)} type="button" title="Redefinir senha"><KeyRound size={15} /></button>}<button onClick={() => void changeStatus(() => onStaffStatus(person.id, person.status === 'inactive'), person.status === 'inactive' ? `${staffRoleLabels[person.role]} reativado.` : `${staffRoleLabels[person.role]} desativado.`)} type="button" title={person.status === 'inactive' ? 'Reativar' : 'Desativar'}>{person.status === 'inactive' ? <RotateCcw size={15} /> : <Trash2 size={15} />}</button></span>}</article>)}</div> : <div className="people-table">{residents.map((person) => <article key={person.id}><span className="administrator-avatar">{userInitials(person.fullName || person.email)}</span><div><strong>{person.fullName || person.email || 'Morador'}</strong><small>{person.username ? `@${person.username}` : person.email || `${person.buildingName} · ${person.unitNumber}`}</small></div><span>{person.buildingName} · {person.unitNumber}</span><em className={`membership-status membership-status--${person.status}`}>{person.status === 'active' ? 'Ativo' : person.status === 'pending' ? 'Pendente' : person.status === 'inactive' ? 'Inativo' : 'Rejeitado'}</em>{canManage && <span className="people-row-actions">{person.identityId && <button onClick={() => void resetPassword(person.identityId!)} type="button" title="Redefinir senha"><KeyRound size={15} /></button>}{person.status === 'pending' && <button onClick={() => void changeStatus(() => onResidentStatus(person, 'approve'), 'Morador aprovado.')} type="button" title="Aprovar"><Check size={15} /></button>}{person.status === 'active' && <button onClick={() => void changeStatus(() => onResidentStatus(person, 'deactivate'), 'Morador desativado.')} type="button" title="Desativar"><Trash2 size={15} /></button>}{person.status === 'inactive' && <button onClick={() => void changeStatus(() => onResidentStatus(person, 'reactivate'), 'Morador reativado.')} type="button" title="Reativar"><RotateCcw size={15} /></button>}</span>}</article>)}</div>}{(tab === 'staff' ? staff.length : residents.length) === 0 && <div className="empty-state"><UsersRound size={25} /><strong>Nenhuma pessoa cadastrada</strong><span>Use o formulário acima para liberar o primeiro acesso.</span></div>}</section>
+    {credentials && <div className="panel-layer resident-modal-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setCredentials(null)}><section className="credentials-modal" role="dialog" aria-modal="true" aria-labelledby="credentials-title"><header><div><span className="eyebrow">CREDENCIAIS TEMPORÁRIAS</span><h2 id="credentials-title">Entregue estes dados à pessoa</h2><p>A senha será exibida somente agora e deverá ser alterada no primeiro acesso.</p></div><button className="icon-button" onClick={() => setCredentials(null)} type="button" aria-label="Fechar"><X size={20} /></button></header><dl><div><dt>Código do condomínio</dt><dd>{credentials.condominiumCode || condominium.registrationCode}</dd></div><div><dt>Usuário</dt><dd>{credentials.username}</dd></div><div><dt>Senha temporária</dt><dd>{credentials.temporaryPassword}</dd></div></dl><button className="button button--outline button--full" onClick={() => void navigator.clipboard.writeText(`Código: ${credentials.condominiumCode || condominium.registrationCode}\nUsuário: ${credentials.username}\nSenha temporária: ${credentials.temporaryPassword}`)} type="button"><Copy size={17} />Copiar credenciais</button><button className="button button--primary button--full" onClick={() => setCredentials(null)} type="button">Concluir</button></section></div>}
   </section>;
 }
 
@@ -775,7 +809,7 @@ function CondominiumSettings({ condominium, buildings, units, staff, residents, 
   return <section className="settings-page"><header className="page-heading"><div><span className="eyebrow">GESTÃO · CONFIGURAÇÕES</span><h1>Condomínio</h1><p>Dados oficiais da operação cadastrados na plataforma.</p></div></header><div className="settings-grid"><section className="settings-card"><header><Building2 size={20} /><div><h2>Identificação</h2><p>Informações institucionais</p></div></header><dl><div><dt>Nome</dt><dd>{condominium.name}</dd></div><div><dt>Código</dt><dd>{condominium.registrationCode}</dd></div><div><dt>Razão social</dt><dd>{condominium.legalName || 'Não informada'}</dd></div><div><dt>CNPJ / documento</dt><dd>{condominium.documentNumber || 'Não informado'}</dd></div></dl></section><section className="settings-card"><header><Settings size={20} /><div><h2>Estrutura e acessos</h2><p>Capacidade atual da operação</p></div></header><dl><div><dt>Blocos</dt><dd>{buildings.length}</dd></div><div><dt>Unidades ativas</dt><dd>{units.length}</dd></div><div><dt>Síndico / subsíndico / zelador</dt><dd>{activeRole('syndic')} / {activeRole('deputy_syndic')} / {activeRole('caretaker')}</dd></div><div><dt>Porteiros</dt><dd>{activeRole('doorman')} de {condominium.staffLimit}</dd></div><div><dt>Moradores vinculados</dt><dd>{residents.filter((item) => item.status === 'active').length}</dd></div></dl></section><section className="settings-card"><header><UserRound size={20} /><div><h2>Contato</h2><p>Referência administrativa</p></div></header><dl><div><dt>Responsável</dt><dd>{condominium.contactName || 'Não informado'}</dd></div><div><dt>E-mail</dt><dd>{condominium.contactEmail || 'Não informado'}</dd></div><div><dt>Endereço</dt><dd>{condominium.addressLine || 'Não informado'}</dd></div><div><dt>Cidade / UF</dt><dd>{[condominium.city, condominium.state].filter(Boolean).join(' / ') || 'Não informado'}</dd></div><div><dt>CEP</dt><dd>{condominium.postalCode || 'Não informado'}</dd></div></dl></section></div>{canManage && <div className="operational-notice"><ShieldCheck size={18} /><span><strong>Dados protegidos.</strong> Alterações cadastrais do condomínio são realizadas pelo administrador da plataforma; blocos, unidades e acessos continuam sob sua gestão.</span></div>}</section>;
 }
 
-function DoormanDashboard({ condominium, buildings, units, packages, staff, residents, staffLimit, canManage, onCreateBuilding, onCreateUnit, onInvitePerson, onStaffStatus, onResidentStatus, onNewPackage, onResidentView, displayName, email, onSignOut }: { condominium: OperationalCondominium; buildings: OperationalBuilding[]; units: OperationalUnit[]; packages: PackageRecord[]; staff: StaffPerson[]; residents: ResidentPerson[]; staffLimit: number; canManage: boolean; onCreateBuilding: (name: string, code: string, floors: string) => Promise<CreateResult>; onCreateUnit: (buildingId: string, unitNumber: string, floorLabel: string) => Promise<CreateResult>; onInvitePerson: (role: PersonInvitationRole, email: string, fullName?: string, unitId?: string) => Promise<CreateResult>; onStaffStatus: (id: string, active: boolean) => Promise<CreateResult>; onResidentStatus: (person: ResidentPerson, action: 'approve' | 'deactivate' | 'reactivate') => Promise<CreateResult>; onNewPackage: () => void; onResidentView: () => void; displayName: string; email: string; onSignOut: () => void }) {
+function DoormanDashboard({ condominium, buildings, units, packages, staff, residents, staffLimit, canManage, onCreateBuilding, onCreateUnit, onCreateInternalPerson, onResetInternalPassword, onStaffStatus, onResidentStatus, onNewPackage, onResidentView, displayName, email, onSignOut }: { condominium: OperationalCondominium; buildings: OperationalBuilding[]; units: OperationalUnit[]; packages: PackageRecord[]; staff: StaffPerson[]; residents: ResidentPerson[]; staffLimit: number; canManage: boolean; onCreateBuilding: (name: string, code: string, floors: string) => Promise<CreateResult>; onCreateUnit: (buildingId: string, unitNumber: string, floorLabel: string) => Promise<CreateResult>; onCreateInternalPerson: (role: PersonInvitationRole, username: string, fullName: string, unitId?: string) => Promise<CreateResult>; onResetInternalPassword: (identityId: string) => Promise<CreateResult>; onStaffStatus: (id: string, active: boolean) => Promise<CreateResult>; onResidentStatus: (person: ResidentPerson, action: 'approve' | 'deactivate' | 'reactivate') => Promise<CreateResult>; onNewPackage: () => void; onResidentView: () => void; displayName: string; email: string; onSignOut: () => void }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [section, setSection] = useState<OperationalSection>(() => window.location.hash === '#unidades' ? 'units' : window.location.hash === '#pessoas' ? 'people' : window.location.hash === '#historico' ? 'history' : window.location.hash === '#configuracoes' ? 'settings' : 'dashboard');
@@ -808,7 +842,7 @@ function DoormanDashboard({ condominium, buildings, units, packages, staff, resi
           <div className="topbar__actions"><button className="icon-button notification" onClick={() => setShowNotifications(true)} type="button" aria-label={`Notificações${waitingCount ? `, ${waitingCount} pendentes` : ''}`}><Bell size={20} />{waitingCount > 0 && <i />}</button><button className="mobile-avatar" onClick={() => setSection('settings')} type="button" aria-label="Abrir configurações">{userInitials(displayName)}</button></div>
         </header>
         <div className="dashboard__content">
-          {section === 'units' ? <UnitsManagement condominium={condominium} buildings={buildings} units={units} canManage={canManage} onCreateBuilding={onCreateBuilding} onCreateUnit={onCreateUnit} /> : section === 'people' ? <PeopleManagement condominium={condominium} units={units} staffLimit={staffLimit} staff={staff} residents={residents} canManage={canManage} onInvite={onInvitePerson} onStaffStatus={onStaffStatus} onResidentStatus={onResidentStatus} /> : section === 'history' ? <OperationalHistory condominium={condominium} packages={packages} onOpen={setSelectedPackage} /> : section === 'settings' ? <CondominiumSettings condominium={condominium} buildings={buildings} units={units} staff={staff} residents={residents} canManage={canManage} /> : <>
+          {section === 'units' ? <UnitsManagement condominium={condominium} buildings={buildings} units={units} canManage={canManage} onCreateBuilding={onCreateBuilding} onCreateUnit={onCreateUnit} /> : section === 'people' ? <PeopleManagement condominium={condominium} units={units} staffLimit={staffLimit} staff={staff} residents={residents} canManage={canManage} onCreateInternal={onCreateInternalPerson} onResetPassword={onResetInternalPassword} onStaffStatus={onStaffStatus} onResidentStatus={onResidentStatus} /> : section === 'history' ? <OperationalHistory condominium={condominium} packages={packages} onOpen={setSelectedPackage} /> : section === 'settings' ? <CondominiumSettings condominium={condominium} buildings={buildings} units={units} staff={staff} residents={residents} canManage={canManage} /> : <>
           <section className="page-heading">
             <div><span className="eyebrow">PORTARIA · OPERAÇÃO ATIVA</span><h1>Olá, {displayName.split(' ')[0]}.</h1><p>Acompanhe o que chegou e mantenha a portaria em ordem.</p></div>
             <button className="button button--primary button--large" disabled={units.length === 0} onClick={onNewPackage} title={units.length === 0 ? 'Cadastre uma unidade antes de receber encomendas' : undefined} type="button"><PackagePlus size={19} />Nova encomenda</button>
@@ -915,11 +949,41 @@ function ResidentApp({ packages, unit, condominium, displayName, email, preview 
   );
 }
 
+function InitialPasswordChange({ username, condominiumId, onComplete, onSignOut }: { username: string; condominiumId: string; onComplete: () => void; onSignOut: () => void }) {
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase) return;
+    if (password !== confirmation) {
+      setError('As senhas não coincidem.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    const { data, error: confirmationError } = await supabase.functions.invoke<InternalIdentityResponse>('manage-internal-identity', {
+      body: { action: 'change_password', condominiumId, password },
+    });
+    setSaving(false);
+    if (confirmationError || !data?.ok) {
+      setError(data?.error || confirmationError?.message || 'Não foi possível concluir a troca de senha.');
+      return;
+    }
+    onComplete();
+  }
+
+  return <main className="password-change-page"><section className="password-change-card"><Brand /><span className="password-change-icon"><KeyRound size={24} /></span><span className="eyebrow">PRIMEIRO ACESSO</span><h1>Crie sua senha definitiva</h1><p>A conta <strong>@{username}</strong> está usando uma senha temporária. Defina uma nova senha antes de entrar no Domus One.</p><form onSubmit={submit}><label>Nova senha<input autoComplete="new-password" required minLength={8} type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo de 8 caracteres" /></label><label>Confirmar nova senha<input autoComplete="new-password" required minLength={8} type="password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="Digite novamente" /></label>{error && <div className="auth-message auth-message--error">{error}</div>}<button className="button button--primary button--full" disabled={saving} type="submit">{saving ? <LoaderCircle className="spin" size={18} /> : <Check size={18} />}{saving ? 'Salvando…' : 'Salvar e acessar'}</button></form><button className="auth-switch" onClick={onSignOut} type="button">Sair e trocar de conta</button></section></main>;
+}
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [access, setAccess] = useState<AccessContext | null>(null);
   const [accessLoading, setAccessLoading] = useState(false);
+  const [internalIdentity, setInternalIdentity] = useState<CurrentInternalIdentity | null>(null);
   const [view, setView] = useState<AppView>('doorman');
   const [condominium, setCondominium] = useState<OperationalCondominium | null>(null);
   const [buildings, setBuildings] = useState<OperationalBuilding[]>([]);
@@ -958,6 +1022,7 @@ export default function App() {
   useEffect(() => {
     if (!session || !supabase) {
       setAccess(null);
+      setInternalIdentity(null);
       setAccessLoading(false);
       return;
     }
@@ -968,10 +1033,11 @@ export default function App() {
       setAccessLoading(true);
       await supabase.rpc('claim_staff_invites');
 
-      const [platformResult, staffResult, residentResult] = await Promise.all([
+      const [platformResult, staffResult, residentResult, internalIdentityResult] = await Promise.all([
         supabase.from('platform_admins').select('user_id').eq('user_id', session!.user.id).maybeSingle(),
         supabase.from('staff_memberships').select('role,condominium_id').eq('user_id', session!.user.id).eq('status', 'active').limit(1).maybeSingle(),
         supabase.from('unit_memberships').select('condominium_id,unit_id').eq('user_id', session!.user.id).eq('status', 'active').limit(1).maybeSingle(),
+        supabase.from('internal_identities').select('id,username,must_change_password').eq('user_id', session!.user.id).maybeSingle(),
       ]);
 
       if (!active) return;
@@ -979,6 +1045,11 @@ export default function App() {
       else if (staffResult.data) setAccess({ kind: 'staff', role: staffResult.data.role as StaffRole, condominiumId: staffResult.data.condominium_id });
       else if (residentResult.data) setAccess({ kind: 'resident', condominiumId: residentResult.data.condominium_id, unitId: residentResult.data.unit_id });
       else setAccess({ kind: 'none' });
+      setInternalIdentity(internalIdentityResult.data ? {
+        id: internalIdentityResult.data.id,
+        username: internalIdentityResult.data.username,
+        mustChangePassword: internalIdentityResult.data.must_change_password,
+      } : null);
       setAccessLoading(false);
     }
     void resolveAccess();
@@ -1012,7 +1083,7 @@ export default function App() {
         .limit(200);
       if (access.kind === 'resident') packageQuery.eq('unit_id', access.unitId);
 
-      const [condominiumResult, buildingsResult, unitsResult, packagesResult, staffResult, residentsResult, profilesResult] = await Promise.all([
+      const [condominiumResult, buildingsResult, unitsResult, packagesResult, staffResult, residentsResult, profilesResult, identitiesResult] = await Promise.all([
         supabase.from('condominiums').select('id,name,registration_code,staff_limit,legal_name,document_number,address_line,city,state,postal_code,contact_name,contact_email').eq('id', condominiumId).single(),
         supabase.from('buildings').select('id,name,code,floors').eq('condominium_id', condominiumId).order('sort_order'),
         supabase.from('units').select('id,unit_number,building_id,floor_label').eq('condominium_id', condominiumId).eq('status', 'active').order('unit_number'),
@@ -1020,9 +1091,10 @@ export default function App() {
         supabase.from('staff_memberships').select('id,user_id,invited_email,role,status,is_owner').eq('condominium_id', condominiumId).order('created_at'),
         supabase.from('unit_memberships').select('id,user_id,unit_id,status').eq('condominium_id', condominiumId).order('created_at'),
         supabase.from('profiles').select('id,full_name,email'),
+        supabase.from('internal_identities').select('id,user_id,username').eq('condominium_id', condominiumId),
       ]);
       if (!active) return;
-      const loadError = condominiumResult.error || buildingsResult.error || unitsResult.error || packagesResult.error || staffResult.error || residentsResult.error || profilesResult.error;
+      const loadError = condominiumResult.error || buildingsResult.error || unitsResult.error || packagesResult.error || staffResult.error || residentsResult.error || profilesResult.error || identitiesResult.error;
       if (loadError) {
         setOperationalError(loadError.message);
         setOperationalLoading(false);
@@ -1039,6 +1111,7 @@ export default function App() {
       }));
       const unitsById = new Map(nextUnits.map((unit) => [unit.id, unit]));
       const profilesById = new Map((profilesResult.data || []).map((profile) => [profile.id, profile]));
+      const identitiesByUserId = new Map((identitiesResult.data || []).map((identity) => [identity.user_id, identity]));
       const nextPackages: PackageRecord[] = ((packagesResult.data || []) as PackageRow[]).flatMap((item) => {
         const unit = unitsById.get(item.unit_id);
         if (!unit || item.status === 'cancelled') return [];
@@ -1077,13 +1150,15 @@ export default function App() {
       setPackages(nextPackages);
       setStaff((staffResult.data || []).map((membership) => {
         const profile = membership.user_id ? profilesById.get(membership.user_id) : null;
-        return { id: membership.id, userId: membership.user_id, email: membership.invited_email || profile?.email || '', fullName: profile?.full_name || '', role: membership.role as StaffRole, status: membership.status as 'invited' | 'active' | 'inactive', isOwner: membership.is_owner };
+        const identity = membership.user_id ? identitiesByUserId.get(membership.user_id) : null;
+        return { id: membership.id, identityId: identity?.id || null, userId: membership.user_id, username: identity?.username || null, email: identity ? '' : membership.invited_email || profile?.email || '', fullName: profile?.full_name || '', role: membership.role as StaffRole, status: membership.status as 'invited' | 'active' | 'inactive', isOwner: membership.is_owner };
       }));
       setResidents((residentsResult.data || []).flatMap((membership) => {
         const unit = unitsById.get(membership.unit_id);
         if (!unit) return [];
         const profile = profilesById.get(membership.user_id);
-        return [{ id: membership.id, userId: membership.user_id, email: profile?.email || '', fullName: profile?.full_name || '', status: membership.status as 'pending' | 'active' | 'inactive' | 'rejected', unitId: membership.unit_id, unitNumber: unit.unitNumber, buildingName: unit.buildingName }];
+        const identity = identitiesByUserId.get(membership.user_id);
+        return [{ id: membership.id, identityId: identity?.id || null, userId: membership.user_id, username: identity?.username || null, email: identity ? '' : profile?.email || '', fullName: profile?.full_name || '', status: membership.status as 'pending' | 'active' | 'inactive' | 'rejected', unitId: membership.unit_id, unitNumber: unit.unitNumber, buildingName: unit.buildingName }];
       }));
       setOperationalLoading(false);
     }
@@ -1096,20 +1171,30 @@ export default function App() {
     window.setTimeout(() => setToast(null), 3200);
   }
 
-  async function invitePerson(role: PersonInvitationRole, invitationEmail: string, fullName?: string, unitId?: string): Promise<CreateResult> {
+  async function createInternalPerson(role: PersonInvitationRole, username: string, fullName: string, unitId?: string): Promise<CreateResult> {
     if (!supabase || !condominium) return { ok: false, error: 'Condomínio não carregado.' };
-    const { data, error } = await supabase.functions.invoke<InvitationResponse>('invite-condominium-admin', {
-      body: { condominiumId: condominium.id, email: invitationEmail.trim(), role, fullName: fullName?.trim(), unitId },
+    const { data, error } = await supabase.functions.invoke<InternalIdentityResponse>('manage-internal-identity', {
+      body: { action: 'create', condominiumId: condominium.id, username: username.trim(), role, fullName: fullName.trim(), unitId },
     });
     if (error || !data?.ok) {
-      const message = data?.error || error?.message || 'Não foi possível enviar o convite.';
+      const message = data?.error || error?.message || 'Não foi possível criar a conta.';
       if (message.includes('staff_limit_reached')) return { ok: false, error: 'O limite de usuários da portaria foi atingido.' };
       if (message.includes('special_role_limit_reached')) return { ok: false, error: 'Este perfil já possui uma pessoa ativa ou convidada. Desative o vínculo atual antes de substituir.' };
-      if (message.includes('duplicate')) return { ok: false, error: 'Esta pessoa já possui um vínculo no condomínio.' };
+      if (message.includes('username_already_exists') || message.includes('duplicate')) return { ok: false, error: 'Este nome de usuário já está em uso no condomínio.' };
+      if (message.includes('invalid_username')) return { ok: false, error: 'Use de 3 a 32 caracteres: letras minúsculas, números, ponto, traço ou sublinhado.' };
       return { ok: false, error: message };
     }
     setPeopleRefreshKey((current) => current + 1);
-    return { ok: true };
+    return { ok: true, credentials: data.credentials };
+  }
+
+  async function resetInternalPassword(identityId: string): Promise<CreateResult> {
+    if (!supabase || !condominium) return { ok: false, error: 'Condomínio não carregado.' };
+    const { data, error } = await supabase.functions.invoke<InternalIdentityResponse>('manage-internal-identity', {
+      body: { action: 'reset_password', condominiumId: condominium.id, identityId },
+    });
+    if (error || !data?.ok) return { ok: false, error: data?.error || error?.message || 'Não foi possível redefinir a senha.' };
+    return { ok: true, credentials: data.credentials ? { ...data.credentials, condominiumCode: condominium.registrationCode } : undefined };
   }
 
   async function changeStaffStatus(id: string, active: boolean): Promise<CreateResult> {
@@ -1229,17 +1314,19 @@ export default function App() {
   const displayName = String(session.user.user_metadata.full_name || session.user.email?.split('@')[0] || 'Usuário');
   const email = session.user.email || '';
   const signOut = () => supabase?.auth.signOut();
+  const accountLabel = internalIdentity ? `@${internalIdentity.username}` : email;
 
+  if (internalIdentity?.mustChangePassword && access && (access.kind === 'staff' || access.kind === 'resident')) return <InitialPasswordChange username={internalIdentity.username} condominiumId={access.condominiumId} onComplete={() => setInternalIdentity((current) => current ? { ...current, mustChangePassword: false } : current)} onSignOut={signOut} />;
   if (access?.kind === 'platform') return <PlatformDashboard displayName={displayName} email={email} onSignOut={signOut} />;
   if (!access || access.kind === 'none') return <NoAccess email={email} onSignOut={signOut} />;
   if (operationalLoading) return <main className="system-state"><Brand /><LoaderCircle className="spin" size={30} /><p>Carregando dados do condomínio…</p></main>;
   if (operationalError || !condominium) return <main className="system-state"><Brand /><ShieldCheck size={30} /><h1>Não foi possível carregar o condomínio</h1><p>{operationalError || 'O vínculo está ativo, mas os dados do condomínio não foram encontrados.'}</p><button className="button button--outline" onClick={() => window.location.reload()} type="button"><RefreshCw size={17} />Tentar novamente</button></main>;
-  if (access.kind === 'resident') return <ResidentApp packages={packages} unit={units.find((unit) => unit.id === access.unitId) || null} condominium={condominium} displayName={displayName} email={email} onBack={signOut} onCollect={collectPackage} />;
+  if (access.kind === 'resident') return <ResidentApp packages={packages} unit={units.find((unit) => unit.id === access.unitId) || null} condominium={condominium} displayName={displayName} email={accountLabel} onBack={signOut} onCollect={collectPackage} />;
 
   return (
     <>
       {view === 'doorman' ? (
-        <DoormanDashboard condominium={condominium} buildings={buildings} units={units} packages={packages} staff={staff} residents={residents} staffLimit={condominium.staffLimit} canManage={['admin', 'syndic', 'deputy_syndic'].includes(access.role)} onCreateBuilding={createBuilding} onCreateUnit={createUnit} onInvitePerson={invitePerson} onStaffStatus={changeStaffStatus} onResidentStatus={changeResidentStatus} onNewPackage={() => setShowNewPackage(true)} onResidentView={() => setShowPreviewPicker(true)} displayName={displayName} email={email} onSignOut={signOut} />
+        <DoormanDashboard condominium={condominium} buildings={buildings} units={units} packages={packages} staff={staff} residents={residents} staffLimit={condominium.staffLimit} canManage={['admin', 'syndic', 'deputy_syndic'].includes(access.role)} onCreateBuilding={createBuilding} onCreateUnit={createUnit} onCreateInternalPerson={createInternalPerson} onResetInternalPassword={resetInternalPassword} onStaffStatus={changeStaffStatus} onResidentStatus={changeResidentStatus} onNewPackage={() => setShowNewPackage(true)} onResidentView={() => setShowPreviewPicker(true)} displayName={displayName} email={accountLabel} onSignOut={signOut} />
       ) : (
         <ResidentApp packages={packages} unit={units.find((unit) => unit.id === previewUnitId) || null} condominium={condominium} displayName={displayName} email={email} preview onBack={() => setView('doorman')} onCollect={collectPackage} />
       )}
