@@ -1179,11 +1179,17 @@ export default function App() {
       body: { action: 'create', condominiumId: condominium.id, username: username.trim(), role, fullName: fullName.trim(), unitId },
     });
     if (error || !data?.ok) {
-      const message = data?.error || error?.message || 'Não foi possível criar a conta.';
+      let functionError = error?.message;
+      if (error && 'context' in error && error.context instanceof Response) {
+        const response = await error.context.clone().json().catch(() => null) as InternalIdentityResponse | null;
+        functionError = response?.error || functionError;
+      }
+      const message = data?.error || functionError || 'Não foi possível criar a conta.';
       if (message.includes('staff_limit_reached')) return { ok: false, error: 'O limite de usuários da portaria foi atingido.' };
       if (message.includes('special_role_limit_reached')) return { ok: false, error: 'Este perfil já possui uma pessoa ativa ou convidada. Desative o vínculo atual antes de substituir.' };
       if (message.includes('username_already_exists') || message.includes('duplicate')) return { ok: false, error: 'Este nome de usuário já está em uso no condomínio.' };
       if (message.includes('invalid_username')) return { ok: false, error: 'Use de 3 a 32 caracteres: letras minúsculas, números, ponto, traço ou sublinhado.' };
+      if (message.includes('not_authorized')) return { ok: false, error: 'Seu vínculo não possui permissão para criar contas. Entre novamente ou confirme se o perfil está ativo.' };
       return { ok: false, error: message };
     }
     setPeopleRefreshKey((current) => current + 1);

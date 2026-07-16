@@ -78,7 +78,7 @@ export default {
       return Response.json({ ok: true });
     }
 
-    const { data: condominiumAccess } = await context.supabase
+    const { data: condominiumAccess, error: condominiumAccessError } = await context.supabaseAdmin
       .from('staff_memberships')
       .select('id')
       .eq('condominium_id', condominiumId)
@@ -87,8 +87,16 @@ export default {
       .eq('status', 'active')
       .maybeSingle();
 
+    if (condominiumAccessError) {
+      console.error('Failed to validate condominium manager', {
+        condominiumId,
+        actorId,
+        message: condominiumAccessError.message,
+      });
+      return Response.json({ ok: false, error: condominiumAccessError.message });
+    }
     if (!condominiumAccess) {
-      return Response.json({ ok: false, error: 'not_authorized' }, { status: 403 });
+      return Response.json({ ok: false, error: 'not_authorized' });
     }
 
     if (action === 'reset_password') {
