@@ -255,7 +255,7 @@ h1, h2, h3, p { margin-top: 0; }
 .people-invite input:focus, .people-invite select:focus { border-color: #6bafa1; box-shadow: 0 0 0 3px rgb(24 122 104 / 9%); }
 .people-list { overflow: hidden; background: white; border: 1px solid var(--stone-200); border-radius: 11px; box-shadow: var(--shadow-sm); }
 .people-list > header { padding: 18px 20px; border-bottom: 1px solid var(--stone-200); }
-.people-table article { min-height: 64px; display: grid; grid-template-columns: 38px minmax(180px, 1.7fr) 1fr .7fr 36px; align-items: center; gap: 12px; padding: 0 20px; border-top: 1px solid var(--stone-200); color: var(--slate); font-size: 10px; }
+.people-table article { min-height: 64px; display: grid; grid-template-columns: 38px minmax(180px, 1.7fr) 1fr .7fr minmax(36px, auto); align-items: center; gap: 12px; padding: 0 20px; border-top: 1px solid var(--stone-200); color: var(--slate); font-size: 10px; }
 .people-table article:first-child { border-top: 0; }
 .people-table article > div { display: grid; gap: 3px; }
 .people-table article > div strong { overflow: hidden; color: var(--graphite); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
@@ -534,10 +534,18 @@ h1, h2, h3, p { margin-top: 0; }
   .structure-table { display: grid; gap: 9px; padding: 12px; }
   .structure-table article { min-height: 82px; grid-template-columns: 1fr 1fr; gap: 8px; padding: 13px; background: white; border: 1px solid var(--stone-200); border-radius: 9px; }
   .people-invite { grid-template-columns: 1fr; }
+  .people-invite { gap: 12px; padding: 17px; }
+  .people-invite > div:first-child { margin-bottom: 2px; }
   .people-invite .button { justify-self: stretch; }
   .people-table { display: grid; gap: 9px; padding: 12px; }
-  .people-table article { min-height: 120px; grid-template-columns: 38px 1fr auto; gap: 9px; padding: 13px; background: white; border: 1px solid var(--stone-200); border-radius: 9px; }
-  .people-table article > div { grid-column: 2 / -1; }
+  .people-table article { min-height: 104px; grid-template-columns: 38px minmax(0, 1fr) auto; grid-template-areas: "avatar identity status" "role role actions"; align-items: center; gap: 10px 11px; padding: 13px; background: white; border: 1px solid var(--stone-200); border-radius: 9px; }
+  .people-table article > .administrator-avatar { grid-area: avatar; }
+  .people-table article > .people-identity { grid-area: identity; min-width: 0; }
+  .people-table article > .people-role { grid-area: role; color: var(--graphite); font-size: 9px; font-weight: 600; }
+  .people-table article > .membership-status { grid-area: status; justify-self: end; }
+  .people-table article > .people-row-actions { grid-area: actions; justify-self: end; }
+  .people-list > header { padding: 16px 17px; }
+  .people-page > .auth-message { font-size: 10px; line-height: 1.55; }
   .page-heading { align-items: flex-start; margin-bottom: 21px; }
   .page-heading h1 { font-size: 26px; }
   .page-heading p { max-width: 260px; line-height: 1.5; }

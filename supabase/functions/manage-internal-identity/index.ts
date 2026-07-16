@@ -38,7 +38,15 @@ export default {
     const body = await request.json() as InternalIdentityRequest;
     const action = body.action || 'create';
     const condominiumId = body.condominiumId?.trim();
-    const actorId = context.userClaims!.sub;
+    const { data: authenticatedUser, error: authenticatedUserError } = await context.supabase.auth.getUser();
+    const actorId = authenticatedUser.user?.id;
+
+    if (authenticatedUserError || !actorId) {
+      console.error('Failed to resolve authenticated user', {
+        message: authenticatedUserError?.message || 'missing_user',
+      });
+      return Response.json({ ok: false, error: 'invalid_session' }, { status: 401 });
+    }
 
     if (!condominiumId) {
       return Response.json({ ok: false, error: 'condominium_required' });
