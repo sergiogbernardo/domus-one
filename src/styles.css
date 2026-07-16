@@ -125,6 +125,7 @@ h1, h2, h3, p { margin-top: 0; }
 .platform-sidebar nav button { min-height: 42px; display: flex; align-items: center; gap: 11px; padding: 0 11px; color: #9ba9b3; background: transparent; border: 0; border-radius: 8px; font-size: 12px; text-align: left; cursor: pointer; }
 .platform-sidebar nav button.active, .platform-sidebar nav button:hover { color: white; background: rgb(24 122 104 / 20%); }
 .platform-sidebar .operator-card { margin-top: auto; }
+.platform-mobile-menu { display: none; }
 .platform-main { grid-column: 2; width: min(1320px, 100%); margin: 0 auto; padding: 46px 44px 60px; }
 .platform-main > header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 30px; }
 .platform-main > header h1 { margin-bottom: 7px; color: var(--navy-950); font: 600 clamp(27px, 3vw, 38px)/1.15 'Manrope', sans-serif; letter-spacing: -.045em; }
@@ -478,12 +479,23 @@ h1, h2, h3, p { margin-top: 0; }
   .auth-panel { min-height: 100vh; padding: 28px 20px; }
   .auth-card > .brand { display: flex; }
   .platform-shell { display: block; }
-  .platform-sidebar { position: static; width: 100%; height: auto; flex-direction: row; align-items: center; padding: 14px 17px; }
+  .platform-sidebar { position: relative; z-index: 20; width: 100%; height: auto; flex-direction: row; align-items: center; padding: 14px 17px; }
   .platform-shell--collapsed .platform-sidebar { width: 100%; padding: 14px 17px; }
   .platform-sidebar .sidebar-toggle { display: none; }
+  .platform-mobile-menu { width: 38px; height: 38px; display: grid; place-items: center; padding: 0; color: #dce3e7; background: rgb(255 255 255 / 7%); border: 1px solid rgb(255 255 255 / 11%); border-radius: 9px; cursor: pointer; }
   .platform-sidebar .brand__name, .platform-sidebar nav, .platform-badge { display: none; }
   .platform-sidebar .operator-card { margin: 0 0 0 auto; padding: 0; border: 0; }
   .platform-sidebar .operator-card > span:nth-child(2) { display: none; }
+  .platform-shell--mobile-open .platform-sidebar { position: fixed; inset: 0 auto 0 0; z-index: 80; width: min(82vw, 290px); height: 100vh; flex-direction: column; align-items: stretch; padding: 22px 17px 18px; box-shadow: 18px 0 50px rgb(6 15 24 / 28%); }
+  .platform-shell--mobile-open .platform-sidebar .sidebar-brand-row { justify-content: space-between; }
+  .platform-shell--mobile-open.platform-shell--collapsed .platform-sidebar .brand { display: flex; }
+  .platform-shell--mobile-open .platform-sidebar .brand__name { display: flex; }
+  .platform-shell--mobile-open .platform-sidebar .platform-badge { display: flex; }
+  .platform-shell--mobile-open .platform-sidebar nav { display: grid; }
+  .platform-shell--mobile-open.platform-shell--collapsed .platform-sidebar nav button, .platform-shell--mobile-open.platform-shell--collapsed .platform-badge { justify-content: flex-start; gap: 11px; padding-inline: 11px; font-size: 12px; }
+  .platform-shell--mobile-open .platform-sidebar .operator-card { margin: auto 0 0; padding: 15px 4px 0; border-top: 1px solid rgb(255 255 255 / 9%); }
+  .platform-shell--mobile-open.platform-shell--collapsed .platform-sidebar .operator-card { grid-template-columns: 34px minmax(0, 1fr) 16px; justify-items: stretch; }
+  .platform-shell--mobile-open .platform-sidebar .operator-card > span:nth-child(2) { display: grid; }
   .platform-main { padding: 25px 17px 40px; }
   .platform-main > header { align-items: flex-start; }
   .platform-main > header p { max-width: 260px; line-height: 1.5; }

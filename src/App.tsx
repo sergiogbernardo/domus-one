@@ -270,6 +270,7 @@ function slugify(value: string) {
 
 function PlatformDashboard({ displayName, email, onSignOut }: { displayName: string; email: string; onSignOut: () => void }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [platformView, setPlatformView] = useState<PlatformAdminView>('overview');
   const [condominiums, setCondominiums] = useState<CondominiumSummary[]>([]);
   const [administrators, setAdministrators] = useState<CondominiumAdministrator[]>([]);
@@ -521,11 +522,12 @@ function PlatformDashboard({ displayName, email, onSignOut }: { displayName: str
   }[platformView];
 
   return (
-    <div className={`platform-shell ${sidebarCollapsed ? 'platform-shell--collapsed' : ''}`}>
+    <div className={`platform-shell ${sidebarCollapsed ? 'platform-shell--collapsed' : ''} ${mobileMenuOpen ? 'platform-shell--mobile-open' : ''}`}>
+      {mobileMenuOpen && <button className="mobile-menu-backdrop" onClick={() => setMobileMenuOpen(false)} type="button" aria-label="Fechar menu" />}
       <aside className="platform-sidebar">
-        <div className="sidebar-brand-row"><Brand /><button className="sidebar-toggle" onClick={() => setSidebarCollapsed((current) => !current)} type="button" aria-label={sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'}><Menu size={18} /></button></div>
+        <div className="sidebar-brand-row"><Brand /><button className="sidebar-toggle" onClick={() => setSidebarCollapsed((current) => !current)} type="button" aria-label={sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'}><Menu size={18} /></button><button className="platform-mobile-menu" onClick={() => setMobileMenuOpen((current) => !current)} type="button" aria-label={mobileMenuOpen ? 'Fechar menu' : 'Abrir menu'} aria-expanded={mobileMenuOpen}>{mobileMenuOpen ? <X size={19} /> : <Menu size={19} />}</button></div>
         <div className="platform-badge"><ShieldCheck size={15} />Administração da plataforma</div>
-        <nav aria-label="Administração da plataforma"><button className={platformView === 'overview' ? 'active' : ''} onClick={() => setPlatformView('overview')} type="button"><LayoutDashboard size={18} />Visão geral</button><button className={platformView === 'condominiums' ? 'active' : ''} onClick={() => setPlatformView('condominiums')} type="button"><Building2 size={18} />Condomínios</button><button className={platformView === 'administrators' ? 'active' : ''} onClick={() => setPlatformView('administrators')} type="button"><UsersRound size={18} />Administradores</button></nav>
+        <nav aria-label="Administração da plataforma"><button className={platformView === 'overview' ? 'active' : ''} onClick={() => { setPlatformView('overview'); setMobileMenuOpen(false); }} type="button"><LayoutDashboard size={18} />Visão geral</button><button className={platformView === 'condominiums' ? 'active' : ''} onClick={() => { setPlatformView('condominiums'); setMobileMenuOpen(false); }} type="button"><Building2 size={18} />Condomínios</button><button className={platformView === 'administrators' ? 'active' : ''} onClick={() => { setPlatformView('administrators'); setMobileMenuOpen(false); }} type="button"><UsersRound size={18} />Administradores</button></nav>
         <div className="operator-card"><span className="avatar">{userInitials(displayName)}</span><span><strong>{displayName}</strong><small>{email}</small></span><button className="operator-card__logout" onClick={onSignOut} type="button" aria-label="Sair"><LogOut size={16} /></button></div>
       </aside>
       <main className="platform-main">
