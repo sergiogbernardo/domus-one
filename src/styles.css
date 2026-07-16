@@ -519,7 +519,7 @@ h1, h2, h3, p { margin-top: 0; }
   .app-shell--mobile-open .sidebar-toggle { display: none; }
   .mobile-menu-backdrop { position: fixed; inset: 0; z-index: 70; display: block; padding: 0; background: rgb(6 15 24 / 55%); border: 0; }
   .dashboard { min-height: 100vh; }
-  .topbar { position: sticky; top: 0; z-index: 15; height: 62px; padding: 0 17px; }
+  .topbar { position: sticky; top: 0; z-index: 40; height: 62px; padding: 0 17px; background: #fff; }
   .topbar__date { display: none; }
   .topbar .brand--compact { display: flex; margin-right: auto; margin-left: 10px; }
   .topbar .brand__mark { width: 34px; height: 34px; border-radius: 9px 9px 9px 3px; }

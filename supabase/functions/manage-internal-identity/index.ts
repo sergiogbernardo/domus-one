@@ -86,7 +86,7 @@ export default {
       return Response.json({ ok: true });
     }
 
-    const { data: condominiumAccess, error: condominiumAccessError } = await context.supabaseAdmin
+    const { data: condominiumAccess, error: condominiumAccessError } = await context.supabase
       .from('staff_memberships')
       .select('id')
       .eq('condominium_id', condominiumId)
