@@ -1,5 +1,11 @@
-const CACHE = 'domus-one-v2';
-const APP_SHELL = ['/domus-one/', '/domus-one/manifest.webmanifest'];
+const CACHE = 'domus-one-v3';
+const APP_SHELL = [
+  '/domus-one/',
+  '/domus-one/manifest.webmanifest',
+  '/domus-one/icon-192.png',
+  '/domus-one/icon-512.png',
+  '/domus-one/icon-maskable-512.png',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(APP_SHELL)));
